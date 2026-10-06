@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { formatNaira, formatUsdc } from "@/lib/naira";
 import { parseAmount } from '@/onchain-money';
 import { ERC20_APPROVE_ABI, ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
+import { useRefreshChain } from '@/lib/chain';
 import { bundlerClient } from '@/lib/wallet';
 import { getUsdc } from '@/onchain-facts';
 import { encodeFunctionData, type Hex } from 'viem';
@@ -43,6 +44,7 @@ const springs = { snappy: { type: 'spring', stiffness: 420, damping: 32 } as con
 export default function InspectionFlow({ listing, account, onClose }: Props) {
   const [step, setStep] = useState<Step>('idle');
   const [paying, setPaying] = useState(false);
+  const refreshChain = useRefreshChain();
 
 
   function bookInspection() {
@@ -60,6 +62,10 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
   }
 
   async function handlePay() {
+    if (listing.sample) {
+      toast.info('This is a sample listing. Real listings appear here once landlords list onchain.');
+      return;
+    }
     if (!ESCROW_ADDRESS) {
       toast.error('Contract not deployed — set VITE_ESCROW_ADDRESS first.');
       return;
@@ -88,6 +94,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
         error: 'Transaction failed.',
       });
       await bundlerClient.waitForUserOperationReceipt({ hash });
+      void refreshChain();
       setStep('paid');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

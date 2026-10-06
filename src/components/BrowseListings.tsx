@@ -5,7 +5,7 @@
  * Inspection-first flow · map pin modal · full i18n
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MapPin, BedDouble, Search, Loader2, ShieldCheck,
@@ -16,6 +16,7 @@ import {
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira, formatUsdc } from '@/lib/naira';
 import { LAGOS_AREAS, PROPERTY_TYPES, type PropertyType } from '@/lib/i18n';
+import { useChainState, type ChainListing } from '@/lib/chain';
 import { useLang } from '@/lib/LangContext';
 import PropertyMap from '@/components/PropertyMap';
 import InspectionFlow from '@/components/InspectionFlow';
@@ -56,6 +57,37 @@ export interface Listing {
   color: string;
   verified?: boolean;
   landlordPhone?: string;
+  /** Placeholder shown before anything is listed onchain — cannot be rented. */
+  sample?: boolean;
+}
+
+const LAGOS_CENTER = { lat: 6.5244, lng: 3.3792 };
+
+function fromChain(l: ChainListing): Listing {
+  const m = l.meta;
+  const propertyType = (PROPERTY_TYPES as readonly string[]).includes(m.propertyType ?? '')
+    ? (m.propertyType as PropertyType)
+    : 'two_bed';
+  const location = m.location || 'Lagos';
+  const rooms = m.rooms ?? 1;
+  return {
+    id: l.id,
+    title: `${rooms}-Bed in ${location}`,
+    address: m.address || location,
+    lat: m.lat ?? LAGOS_CENTER.lat,
+    lng: m.lng ?? LAGOS_CENTER.lng,
+    location,
+    area: LAGOS_AREAS.find(a => location.toLowerCase().includes(a.toLowerCase())) ?? location,
+    rooms,
+    propertyType,
+    furnishing: m.furnishing ?? 'unfurnished',
+    rentUsdc: l.rentUsdc,
+    depositUsdc: l.depositUsdc,
+    active: l.active,
+    desc: m.description ?? '',
+    amenities: m.amenities ?? [],
+    color: LISTING_COLORS[Number(l.id % BigInt(LISTING_COLORS.length))],
+  };
 }
 
 const DEMO_LISTINGS: Listing[] = [
@@ -162,10 +194,17 @@ export default function BrowseListings({ account }: Props) {
   const [showSavedSearches, setShowSavedSearches] = useState(false);
   const [showReferral, setShowReferral] = useState(false);
   const [_paying, _setPaying] = useState<bigint | null>(null);
+  const chain = useChainState();
+
+  // Onchain listings that are live and not already rented; samples only until the first real listing exists.
+  const listings = useMemo(() => {
+    const live = (chain.data?.listings ?? []).filter(l => l.active && l.escrowId === 0n).map(fromChain);
+    return live.length > 0 || !chain.isSuccess ? live : DEMO_LISTINGS.map(l => ({ ...l, sample: true }));
+  }, [chain.data, chain.isSuccess]);
 
   const activeArea = showCustomArea && customArea.trim() ? customArea.trim() : area;
 
-  const filtered = DEMO_LISTINGS.filter(l => {
+  const filtered = listings.filter(l => {
     const matchArea = activeArea === 'all_areas' || l.area === activeArea ||
       (showCustomArea && customArea.trim() &&
         l.area.toLowerCase().includes(customArea.toLowerCase()) ||
@@ -395,7 +434,7 @@ export default function BrowseListings({ account }: Props) {
           <h2 className="display text-white text-2xl font-bold mb-1" style={{ letterSpacing: '-0.03em' }}>{t('no_agent')}</h2>
           <p className="text-white text-sm opacity-80 max-w-xs">{t('inspection_note')}</p>
           <div className="flex gap-2 mt-3 flex-wrap">
-            <span className="text-[10px] font-semibold bg-white/20 text-white px-2.5 py-1 rounded-full">{DEMO_LISTINGS.length} properties</span>
+            <span className="text-[10px] font-semibold bg-white/20 text-white px-2.5 py-1 rounded-full">{listings.length} {listings[0]?.sample ? 'sample ' : ''}properties</span>
             <span className="text-[10px] font-semibold bg-white/20 text-white px-2.5 py-1 rounded-full">Gasless payments</span>
             <span className="text-[10px] font-semibold bg-white/20 text-white px-2.5 py-1 rounded-full">20+ areas</span>
           </div>
@@ -447,6 +486,11 @@ export default function BrowseListings({ account }: Props) {
 
                 {/* Top badges */}
                 <div className="absolute top-3 left-3 flex gap-1.5">
+                  {listing.sample && (
+                    <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-black/60 text-white">
+                      Sample
+                    </span>
+                  )}
                   {listing.verified && (
                     <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full bg-white/90 text-green-700">
                       <BadgeCheck className="w-3 h-3" /> {t('verified_landlord')}

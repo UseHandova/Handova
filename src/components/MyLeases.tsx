@@ -3,100 +3,82 @@
  * Tenant can confirm move-in and end tenancy from here.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ShieldCheck, CheckCircle2, Loader2, Trophy, ExternalLink, Download, AlertTriangle, Wrench } from 'lucide-react';
+import { FileText, ShieldCheck, CheckCircle2, Loader2, Trophy, ExternalLink, Download, AlertTriangle, Wrench, Clock } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira } from '@/lib/naira';
-import { ESCROW_ABI, ESCROW_ADDRESS, EscrowStatus, ESCROW_STATUS_LABEL } from '@/lib/contracts';
-import { bundlerClient } from '@/lib/wallet';
-import { encodeFunctionData } from 'viem';
+import { EscrowStatus, ESCROW_STATUS_LABEL } from '@/lib/contracts';
+import {
+  canDispute, formatCountdown, sameAddress, sendEscrowTx, useChainState, useNow, useRefreshChain,
+  DEPOSIT_REVIEW_MS, MOVE_IN_WINDOW_MS,
+} from '@/lib/chain';
 import { toast } from 'sonner';
 import { buildTxExplorerUrl } from '@/onchain-facts';
 import LeasePdfExport from '@/components/LeasePdfExport';
 import DisputeEvidence from '@/components/DisputeEvidence';
 import MaintenanceTracker from '@/components/MaintenanceTracker';
 
-// Demo escrow data — in production, read from chain events filtered by tenant address
-const DEMO_ESCROWS = [
-  { id: 1n, listingId: 1n, location: 'Lekki Phase 1, Lagos', rentUsdc: 150, depositUsdc: 150, status: EscrowStatus.Pending, createdAt: Date.now() - 86400000, txHash: '' },
-];
 
 interface Props {
   account: SmartAccount;
   address: string;
 }
 
-export default function MyLeases({ account, address: _address }: Props) {
+type TenantAction = 'confirmMoveIn' | 'endTenancy' | 'claimDeposit' | 'dispute';
+
+const SUCCESS: Record<TenantAction, string> = {
+  confirmMoveIn: 'Move-in confirmed! Rent released to landlord. Your NFT lease certificate has been minted.',
+  endTenancy: 'Move-out recorded. Your landlord has 7 days to inspect — if they don\'t dispute, your deposit comes back to you.',
+  claimDeposit: 'Deposit credited — tap Withdraw in the header.',
+  dispute: 'Dispute opened. Upload your evidence so the RentFlow team can review.',
+};
+
+export default function MyLeases({ account, address }: Props) {
   const [acting, setActing] = useState<bigint | null>(null);
-  const [localStatuses, setLocalStatuses] = useState<Record<string, EscrowStatus>>({});
   const [pdfEscrow, setPdfEscrow] = useState<bigint | null>(null);
   const [disputeEscrow, setDisputeEscrow] = useState<bigint | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
+  const chain = useChainState();
+  const refreshChain = useRefreshChain();
+  const now = useNow();
 
-  function getStatus(id: bigint): EscrowStatus {
-    return localStatuses[id.toString()] ?? DEMO_ESCROWS.find(e => e.id === id)?.status ?? EscrowStatus.Pending;
-  }
+  // This tenant's escrows, newest first.
+  const escrows = useMemo(() => (chain.data?.escrows ?? [])
+    .filter(e => sameAddress(e.tenant, address))
+    .reverse()
+    .map(e => ({
+      ...e,
+      location: e.listing?.meta.location || e.listing?.meta.address || `Listing #${e.listingId}`,
+      rentUsdc: e.listing?.rentUsdc ?? 0,
+      depositUsdc: e.listing?.depositUsdc ?? 0,
+      txHash: '',
+    })), [chain.data, address]);
 
-  async function confirmMoveIn(escrowId: bigint) {
-    if (!ESCROW_ADDRESS) { toast.error('Contract not deployed yet.'); return; }
+  async function run(escrowId: bigint, action: TenantAction) {
     setActing(escrowId);
     try {
-      const calldata = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'confirmMoveIn', args: [escrowId] });
-
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }],
-        paymaster: true,
-      });
-
-      toast.promise(
-        bundlerClient.waitForUserOperationReceipt({ hash }).then(() => {
-          setLocalStatuses(s => ({ ...s, [escrowId.toString()]: EscrowStatus.Active }));
-        }),
-        {
-          loading: 'Confirming move-in…',
-          success: 'Move-in confirmed! Rent released to landlord. Your NFT lease certificate is being minted.',
-          error: 'Confirmation failed.',
-        },
-      );
-    } catch {
-      toast.error('Could not confirm move-in.');
+      await sendEscrowTx(account, { functionName: action, args: [escrowId] });
+      toast.success(SUCCESS[action]);
+      await refreshChain();
+      if (action === 'dispute') setDisputeEscrow(escrowId);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg.includes('NotAllowedError') ? 'Passkey cancelled.' : 'Transaction failed. Please try again.');
     } finally {
       setActing(null);
     }
   }
 
-  async function endTenancy(escrowId: bigint) {
-    if (!ESCROW_ADDRESS) { toast.error('Contract not deployed yet.'); return; }
-    setActing(escrowId);
-    try {
-      const calldata = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'endTenancy', args: [escrowId] });
-
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }],
-        paymaster: true,
-      });
-
-      toast.promise(
-        bundlerClient.waitForUserOperationReceipt({ hash }).then(() => {
-          setLocalStatuses(s => ({ ...s, [escrowId.toString()]: EscrowStatus.Ending }));
-        }),
-        {
-          loading: 'Ending tenancy…',
-          success: 'Move-out recorded. Your landlord has 7 days to inspect — if they don\'t dispute, your deposit comes back to you.',
-          error: 'Could not end tenancy.',
-        },
-      );
-    } catch {
-      toast.error('Could not end tenancy.');
-    } finally {
-      setActing(null);
-    }
+  if (chain.isLoading) {
+    return (
+      <div className="flex justify-center py-24">
+        <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} />
+      </div>
+    );
   }
 
-  if (DEMO_ESCROWS.length === 0) {
+  if (escrows.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
         <FileText className="w-12 h-12 mb-4" style={{ color: 'var(--subtle)' }} />
@@ -118,7 +100,7 @@ export default function MyLeases({ account, address: _address }: Props) {
       {/* Modals */}
       <AnimatePresence>
         {pdfEscrow !== null && (() => {
-          const esc = DEMO_ESCROWS.find(e => e.id === pdfEscrow);
+          const esc = escrows.find(e => e.id === pdfEscrow);
           if (!esc) return null;
           return (
             <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4"
@@ -141,11 +123,14 @@ export default function MyLeases({ account, address: _address }: Props) {
       </AnimatePresence>
 
       <div className="space-y-4">
-        {DEMO_ESCROWS.map((escrow, i) => {
-          const status = getStatus(escrow.id);
+        {escrows.map((escrow, i) => {
+          const status = escrow.status;
           const isActive = status === EscrowStatus.Active;
           const isPending = status === EscrowStatus.Pending;
+          const isEnding = status === EscrowStatus.Ending;
+          const isDisputed = status === EscrowStatus.Disputed;
           const isDone = status === EscrowStatus.Released || status === EscrowStatus.Refunded;
+          const reviewDeadline = escrow.endRequestedAt + DEPOSIT_REVIEW_MS;
 
           return (
             <motion.div
@@ -195,14 +180,14 @@ export default function MyLeases({ account, address: _address }: Props) {
                   <div className="flex-1">
                     <p className="text-xs" style={{ color: 'var(--subtle)' }}>Rent held</p>
                     <p className="text-sm font-600 tabular-nums" style={{ color: 'var(--ink)' }}>
-                      {isPending || isActive ? formatNaira(escrow.rentUsdc) : '—'}
+                      {isPending ? formatNaira(escrow.rentUsdc) : '—'}
                     </p>
                   </div>
                   <div className="w-px" style={{ background: 'var(--border)' }} />
                   <div className="flex-1">
                     <p className="text-xs" style={{ color: 'var(--subtle)' }}>Deposit held</p>
                     <p className="text-sm font-600 tabular-nums" style={{ color: 'var(--ink)' }}>
-                      {isPending || isActive ? formatNaira(escrow.depositUsdc) : '—'}
+                      {isPending || isActive || isEnding || isDisputed ? formatNaira(escrow.depositUsdc) : '—'}
                     </p>
                   </div>
                   <div className="w-px" style={{ background: 'var(--border)' }} />
@@ -229,9 +214,15 @@ export default function MyLeases({ account, address: _address }: Props) {
                 )}
 
                 {/* Actions */}
+                {isPending && escrow.handoverAt > 0 && (
+                  <div className="flex items-start gap-2 text-xs mb-2" style={{ color: 'var(--muted)' }}>
+                    <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+                    Your landlord says the keys were handed over. Confirm within {formatCountdown(escrow.handoverAt + MOVE_IN_WINDOW_MS, now)}, or raise a dispute if something is wrong.
+                  </div>
+                )}
                 {isPending && (
                   <button
-                    onClick={() => { void confirmMoveIn(escrow.id); }}
+                    onClick={() => { void run(escrow.id, 'confirmMoveIn'); }}
                     disabled={acting === escrow.id}
                     className="w-full py-3 rounded-xl font-600 text-white text-sm flex items-center justify-center gap-2 transition-opacity active:opacity-80"
                     style={{ background: acting === escrow.id ? 'var(--subtle)' : 'var(--accent)' }}
@@ -251,7 +242,7 @@ export default function MyLeases({ account, address: _address }: Props) {
                       Rent released to landlord. Deposit stays in escrow until you move out and the landlord inspects.
                     </div>
                     <button
-                      onClick={() => { void endTenancy(escrow.id); }}
+                      onClick={() => { void run(escrow.id, 'endTenancy'); }}
                       disabled={acting === escrow.id}
                       className="w-full py-3 rounded-xl font-600 text-sm flex items-center justify-center gap-2 border transition-opacity active:opacity-70"
                       style={{
@@ -262,6 +253,34 @@ export default function MyLeases({ account, address: _address }: Props) {
                     >
                       {acting === escrow.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Move Out & Start Deposit Review'}
                     </button>
+                  </div>
+                )}
+
+                {isEnding && (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+                      <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+                      {now < reviewDeadline
+                        ? `Your landlord is inspecting. If they don't dispute, you can reclaim your deposit in ${formatCountdown(reviewDeadline, now)}.`
+                        : 'Review period is over — your deposit is ready to claim.'}
+                    </div>
+                    {now >= reviewDeadline && (
+                      <button
+                        onClick={() => { void run(escrow.id, 'claimDeposit'); }}
+                        disabled={acting === escrow.id}
+                        className="w-full py-3 rounded-xl font-600 text-white text-sm flex items-center justify-center gap-2"
+                        style={{ background: acting === escrow.id ? 'var(--subtle)' : 'var(--accent)' }}
+                      >
+                        {acting === escrow.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Claim My Deposit'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {isDisputed && (
+                  <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
+                    In dispute. The RentFlow team is reviewing the evidence from both sides.
                   </div>
                 )}
 
@@ -291,7 +310,11 @@ export default function MyLeases({ account, address: _address }: Props) {
                     style={{ background: 'var(--surface-muted)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                     <Download className="w-3.5 h-3.5" /> Lease PDF
                   </button>
-                  <button onClick={() => setDisputeEscrow(escrow.id)}
+                  <button onClick={() => {
+                    if (canDispute(escrow)) void run(escrow.id, 'dispute');
+                    else setDisputeEscrow(escrow.id);
+                  }}
+                    disabled={acting === escrow.id}
                     className="flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-semibold"
                     style={{ background: 'rgba(245,158,11,0.08)', color: '#b45309', border: '1px solid rgba(245,158,11,0.2)' }}>
                     <AlertTriangle className="w-3.5 h-3.5" /> Dispute
