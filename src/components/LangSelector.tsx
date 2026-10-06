@@ -106,10 +106,9 @@ export default function LangSelector({ onVoiceResult, showMic = true, compact = 
               transition={{ type: 'spring', stiffness: 420, damping: 30 }}
               className="absolute right-0 mt-1 w-44 rounded-2xl shadow-lg z-50 overflow-hidden"
               style={{
-                background: 'var(--glass-card)',
-                backdropFilter: 'blur(24px)',
-                WebkitBackdropFilter: 'blur(24px)',
-                border: '1px solid var(--glass-border)',
+                background: 'var(--popover)',
+                border: '1px solid var(--border)',
+                boxShadow: '0 16px 40px rgba(0,0,0,0.28)',
               }}
             >
               {LANGUAGES.map((l, i) => (

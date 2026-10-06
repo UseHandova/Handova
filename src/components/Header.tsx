@@ -41,7 +41,7 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22 }}
-      className="sticky top-0 z-40 flex items-center justify-between px-4 py-3 border-b"
+      className="sticky top-0 z-50 flex items-center justify-between px-4 py-3 border-b"
       style={{
         background: 'var(--glass-card)',
         backdropFilter: 'blur(20px)',
@@ -79,7 +79,7 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
       {/* Right: actions */}
       <div className="flex items-center gap-1.5 relative">
         {/* Notifications */}
-        <NotificationCenter />
+        <NotificationCenter address={address} />
 
         {/* Admin (if admin wallet) */}
         {isAdmin && onOpenAdmin && (
