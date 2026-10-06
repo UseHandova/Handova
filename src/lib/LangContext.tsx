@@ -12,32 +12,41 @@ interface LangContextValue {
   lang: LangCode;
   setLang: (l: LangCode) => void;
   t: (key: TranslationKey) => string;
+  /** False until the user has picked a language once (drives the first-visit language screen). */
+  chosen: boolean;
 }
 
 const LangContext = createContext<LangContextValue>({
   lang: 'en',
   setLang: () => {},
   t: (key) => key,
+  chosen: true,
 });
 
+function readSaved(): string | null {
+  try { return localStorage.getItem('rf-lang'); } catch { return null; }
+}
+
 function getSavedLang(): LangCode {
-  const saved = localStorage.getItem('rf-lang') as LangCode | null;
+  const saved = readSaved() as LangCode | null;
   const valid: LangCode[] = ['en', 'yo', 'pcm', 'ig', 'ha'];
   return valid.includes(saved as LangCode) ? (saved as LangCode) : 'en';
 }
 
 export function LangProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<LangCode>(getSavedLang);
+  const [chosen, setChosen] = useState(() => readSaved() !== null);
 
   const setLang = useCallback((l: LangCode) => {
     setLangState(l);
-    localStorage.setItem('rf-lang', l);
+    setChosen(true);
+    try { localStorage.setItem('rf-lang', l); } catch { /* storage unavailable */ }
   }, []);
 
   const tFn = useCallback((key: TranslationKey) => translate(lang, key), [lang]);
 
   return (
-    <LangContext.Provider value={{ lang, setLang, t: tFn }}>
+    <LangContext.Provider value={{ lang, setLang, t: tFn, chosen }}>
       {children}
     </LangContext.Provider>
   );
