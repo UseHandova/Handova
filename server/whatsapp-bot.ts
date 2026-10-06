@@ -174,7 +174,8 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
           process.env.TWILIO_AUTH_TOKEN,
         );
         textToParse = `${msgBody} [Voice note transcript: ${transcript}]`;
-      } catch {
+      } catch (err) {
+        console.error('[RentFlow Bot] Voice transcription failed:', err instanceof Error ? err.message : err);
         // Fall back to text-only parsing
       }
     }
@@ -193,7 +194,8 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     let parsed;
     try {
       parsed = await parseListingFromText(textToParse);
-    } catch {
+    } catch (err) {
+      console.error('[RentFlow Bot] Listing parse failed:', err instanceof Error ? err.message : err);
       res.set('Content-Type', 'text/xml').send(
         twimlReply('Sorry, I could not understand the property details. Please try again with location, number of rooms, and rent amount.'),
       );
