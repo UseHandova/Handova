@@ -26,7 +26,8 @@ import WhatsAppInbox from '@/components/WhatsAppInbox';
 import LangSelector from '@/components/LangSelector';
 import { geocodeAddress, PinDropMap } from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { clearReturnParams, diditSessionFromUrl, waCodeFromUrl } from '@/lib/url';
+import { clearReturnParams, diditSessionFromUrl } from '@/lib/url';
+import { usePath } from '@/lib/router';
 import { PROPERTY_TYPES, type PropertyType, type TranslationKey } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import LandlordVerification from '@/components/LandlordVerification';
@@ -102,8 +103,12 @@ const springs = {
 };
 
 export default function LandlordDashboard({ account }: Props) {
-  const [view, setView] = useState<View>('home');
-  const [dashTab, setDashTab] = useState<DashTab>(() => (waCodeFromUrl() ? 'whatsapp' : 'listings'));
+  // Screen comes from the URL so reloads and the back button work.
+  const [path, navigate] = usePath();
+  const view: View = path === '/landlord/new' ? 'new-listing' : 'home';
+  const dashTab: DashTab = path === '/landlord/whatsapp' ? 'whatsapp' : path === '/landlord/insights' ? 'stats' : 'listings';
+  const setView = (v: View) => navigate(v === 'new-listing' ? '/landlord/new' : '/landlord');
+  const setDashTab = (t: DashTab) => navigate(t === 'whatsapp' ? '/landlord/whatsapp' : t === 'stats' ? '/landlord/insights' : '/landlord');
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const { t } = useLang();

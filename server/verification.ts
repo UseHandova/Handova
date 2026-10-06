@@ -276,7 +276,7 @@ export function mountVerification(app: Express, config: VerificationConfig = con
       body: JSON.stringify({
         workflow_id: config.diditWorkflowId, vendor_data: account,
         // No query string of our own: Didit appends ?verificationSessionId=…&status=… to this URL.
-        callback: back ? `${back}/` : undefined, metadata: { app: 'rentflow' },
+        callback: back ? `${back}/landlord` : undefined, metadata: { app: 'rentflow' },
       }),
     }).catch(() => null);
     const body = await r?.json().catch(() => ({})) as { session_id?: string; url?: string; detail?: string } | undefined;

@@ -313,7 +313,7 @@ describe('landlord verification e2e — Didit', () => {
     const s = await start(a, { doc: 'NGA-111' });
     expect(s.status).toBe(200);
     expect(s.body.url).toContain('verify.didit.me');
-    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/');
+    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/landlord');
     const c = await complete(s.body.sessionId!);
     expect(c.status).toBe(200);
     expect(c.body.txHash).toMatch(/^0x[0-9a-f]{64}$/);
@@ -359,7 +359,7 @@ describe('landlord verification e2e — Didit', () => {
   test('a foreign return URL is replaced with our own app', async () => {
     const a = privateKeyToAccount(generatePrivateKey());
     const s = await start(a, { returnTo: 'https://evil.example' });
-    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/');
+    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/landlord');
   });
 
   test('starting a session requires a signature from the account', async () => {
