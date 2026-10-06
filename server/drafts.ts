@@ -1,11 +1,10 @@
 /**
- * WhatsApp listing drafts, persisted in SQLite (bun:sqlite — no extra service) so pending claim codes
- * survive server restarts. DB file: DRAFTS_DB (default server/data/rentflow.db).
+ * WhatsApp listing drafts, persisted in SQLite (the shared app database, see db.ts) so pending claim
+ * codes survive server restarts.
  */
 
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { db as sharedDb } from './db';
 
 export interface Draft {
   id: string;
@@ -27,11 +26,10 @@ export interface Draft {
 /** Unclaimed drafts stop working after this long. */
 const DRAFT_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
-export function openDrafts(file = process.env.DRAFTS_DB || 'server/data/rentflow.db') {
-  if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
-  const db = new Database(file, { create: true });
-  db.exec(`PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS drafts (
+/** Drafts store on the shared app database (or a separate file, e.g. ':memory:' for tests). */
+export function openDrafts(file?: string) {
+  const db = file ? new Database(file, { create: true }) : sharedDb();
+  db.exec(`CREATE TABLE IF NOT EXISTS drafts (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL,
       status TEXT NOT NULL,

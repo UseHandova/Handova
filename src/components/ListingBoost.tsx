@@ -1,17 +1,20 @@
 /**
  * ListingBoost — USDC-powered featured listing placement.
  * Landlords pay a small USDC fee to pin a listing to the top for 7/14/30 days.
- * Uses Circle Modular Wallets (gasless) for the USDC transfer.
+ * Uses Circle Modular Wallets (gasless) for the USDC transfer to the platform treasury; the server verifies
+ * the payment onchain before the boost turns on, and Browse shows boosted listings first.
  */
 
 import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, X, CheckCircle2, Loader2, TrendingUp, Star } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { useLang } from '@/lib/LangContext';
 import { toast } from 'sonner';
 import { bundlerClient } from '@/lib/wallet';
-import { encodeAbiParameters, parseAbiParameters, type Hex } from 'viem';
+import { encodeFunctionData, erc20Abi, type Hex } from 'viem';
+import { api, ApiError, publicApi } from '@/lib/api';
 import { getUsdc } from '@/onchain-facts';
 import { parseAmount } from '@/onchain-money';
 
@@ -33,45 +36,54 @@ interface Props {
 const usdcFact = getUsdc(5042002);
 const USDC_ADDR = (usdcFact?.address ?? '0x3600000000000000000000000000000000000000') as Hex;
 // Platform treasury address — in production this would be a real multisig
-const TREASURY = '0x5B12Ce46C7194aD57d143bC22847224047b1Ef42' as Hex;
+export function useBoosts() {
+  return useQuery({
+    queryKey: ['boosts'],
+    queryFn: () => publicApi<{ treasury: string | null; boosts: { listingId: string; endsAt: number }[] }>('/api/boosts'),
+    staleTime: 30_000,
+  });
+}
 
 export default function ListingBoost({ listingId, listingTitle, account, onClose }: Props) {
   const { t } = useLang();
+  const qc = useQueryClient();
+  const boosts = useBoosts();
   const [selected, setSelected] = useState<BoostId>('14d');
   const [boosting, setBoosting] = useState(false);
   const [done, setDone] = useState(false);
   const [activeBoostedUntil, setActiveBoostedUntil] = useState<string | null>(null);
 
-  // Load any active boost from localStorage
-  const storedBoost = localStorage.getItem(`boost_${listingId}`);
-  const isAlreadyBoosted = storedBoost && new Date(storedBoost) > new Date();
+  const current = boosts.data?.boosts.find(b => b.listingId === listingId);
+  // The server only returns boosts that are still running.
+  const isAlreadyBoosted = !!current;
+  const treasury = boosts.data?.treasury as Hex | null | undefined;
 
   const option = BOOST_OPTIONS.find(o => o.id === selected)!;
 
   async function handleBoost() {
+    if (!treasury) { toast.error('Boosts are not available right now.'); return; }
     setBoosting(true);
     try {
       const amount = parseAmount(5042002, option.usdcCost.toString());
-      // Transfer USDC to treasury
-      const transferData = encodeAbiParameters(
-        parseAbiParameters('address, uint256'),
-        [TREASURY, amount.raw],
-      );
-      const calldata = ('0xa9059cbb' + transferData.slice(2)) as Hex;
+      // 1. Pay the treasury in USDC (gasless).
+      const calldata = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [treasury, amount.raw] });
       const hash = await bundlerClient.sendUserOperation({
         account,
         calls: [{ to: USDC_ADDR, data: calldata, value: 0n }],
         paymaster: true,
       });
-      await bundlerClient.waitForUserOperationReceipt({ hash });
-      const expiresAt = new Date(Date.now() + option.days * 86400000);
-      localStorage.setItem(`boost_${listingId}`, expiresAt.toISOString());
-      setActiveBoostedUntil(expiresAt.toLocaleDateString('en-NG'));
+      const receipt = await bundlerClient.waitForUserOperationReceipt({ hash });
+      // 2. The server checks that payment onchain before turning the boost on.
+      const res = await api<{ endsAt: number }>(account, '/api/boosts', {
+        body: { listingId, days: option.days, txHash: receipt.receipt.transactionHash },
+      });
+      await qc.invalidateQueries({ queryKey: ['boosts'] });
+      setActiveBoostedUntil(new Date(res.endsAt).toLocaleDateString('en-NG'));
       setDone(true);
-      toast.success(`Listing boosted for ${option.days} days!`);
+      toast.success(`Listing boosted until ${new Date(res.endsAt).toLocaleDateString('en-NG')}!`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(msg.includes('NotAllowedError') ? 'Passkey cancelled.' : 'Boost payment failed.');
+      toast.error(/NotAllowedError|cancel/i.test(msg) ? 'Passkey cancelled.' : e instanceof ApiError ? msg : 'Boost payment failed.');
     } finally {
       setBoosting(false);
     }
@@ -131,7 +143,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
                 <Zap className="w-10 h-10" style={{ color: '#f59e0b' }} />
                 <p className="font-bold" style={{ color: 'var(--ink)' }}>{t('boost_active')}</p>
                 <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                  This listing is already boosted until {new Date(storedBoost).toLocaleDateString('en-NG')}.
+                  This listing is already boosted until {new Date(current!.endsAt).toLocaleDateString('en-NG')}.
                 </p>
                 <button onClick={onClose} className="px-6 py-2.5 rounded-2xl font-semibold text-sm text-white"
                   style={{ background: 'var(--accent)' }}>Close</button>

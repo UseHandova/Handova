@@ -1,17 +1,18 @@
 /**
  * AdminDashboard — internal admin panel for RentFlow operators.
- * Shows platform stats, pending verifications, flagged accounts, and dispute resolution.
- * Accessible only to the escrow's onchain arbiter. Disputes and stats are read from the chain;
- * verifications and flags are still local demo data until there is a backend.
+ * Platform stats, listing moderation and dispute resolution — all real (chain + server).
+ * Accessible only to the escrow's onchain arbiter.
  */
 
 import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, publicApi } from '@/lib/api';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Users, Building2, ShieldCheck, AlertTriangle,
-  CheckCircle2, X, Eye, BarChart3, TrendingUp, Flag,
+  X, Eye, BarChart3, TrendingUp, Flag,
 } from 'lucide-react';
 import { useLang } from '@/lib/LangContext';
 import { formatNaira } from '@/lib/naira';
@@ -19,36 +20,7 @@ import { toast } from 'sonner';
 import { EscrowStatus } from '@/lib/contracts';
 import { formatCountdown, sendEscrowTx, useChainState, useIsAdmin, useNow, useRefreshChain, DISPUTE_TIMEOUT_MS } from '@/lib/chain';
 
-interface VerificationRequest {
-  id: string;
-  name: string;
-  nin: string;
-  bvn: string;
-  submittedAt: string;
-  status: 'pending' | 'approved' | 'rejected';
-}
-
-interface FlaggedUser {
-  id: string;
-  address: string;
-  reason: string;
-  flaggedAt: string;
-}
-
-
-const DEMO_VERIFICATIONS: VerificationRequest[] = [
-  { id: 'v1', name: 'Emeka Okonkwo', nin: '12345678901', bvn: '22345678901', submittedAt: '2026-10-05', status: 'pending' },
-  { id: 'v2', name: 'Fatima Bello', nin: '23456789012', bvn: '33456789012', submittedAt: '2026-10-04', status: 'pending' },
-  { id: 'v3', name: 'Chukwuemeka A.', nin: '34567890123', bvn: '44567890123', submittedAt: '2026-10-02', status: 'approved' },
-];
-
-const DEMO_FLAGS: FlaggedUser[] = [
-  { id: 'f1', address: '0xabc...def1', reason: 'Suspicious listing — duplicate address', flaggedAt: '2026-10-03' },
-];
-
-
-
-type AdminTab = 'overview' | 'verifications' | 'flags' | 'disputes';
+type AdminTab = 'overview' | 'moderation' | 'disputes';
 
 interface Props {
   address: string;
@@ -61,12 +33,17 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 export default function AdminDashboard({ address, account, onClose }: Props) {
   const { t } = useLang();
   const [tab, setTab] = useState<AdminTab>('overview');
-  const [verifications, setVerifications] = useState(DEMO_VERIFICATIONS);
-  const [flags, setFlags] = useState(DEMO_FLAGS);
+  const hidden = useQuery({
+    queryKey: ['rentflow-hidden-admin'],
+    queryFn: () => publicApi<{ items: { listingId: string; reason: string; hiddenAt: number }[] }>('/api/moderation/hidden'),
+  });
+  const [moderating, setModerating] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
 
   const isAdmin = useIsAdmin(address);
   const chain = useChainState();
   const refreshChain = useRefreshChain();
+  const qc = useQueryClient();
   const [resolving, setResolving] = useState<string | null>(null);
   const now = useNow();
 
@@ -82,10 +59,10 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
       { label: 'Active Listings', value: String(listings.filter(l => l.active && l.escrowId === 0n).length), icon: Building2, color: '#7c3aed' },
       { label: 'Total Escrows', value: String(escrows.length), icon: ShieldCheck, color: '#0e7490' },
       { label: 'Platform Volume', value: formatNaira(volume), icon: TrendingUp, color: '#b45309' },
-      { label: 'Pending Verifs', value: String(verifications.filter(v => v.status === 'pending').length), icon: Eye, color: '#f59e0b' },
+      { label: 'Verified Landlords', value: String(new Set(listings.filter(l => l.landlordVerifiedAt > 0).map(l => l.landlord.toLowerCase())).size), icon: Eye, color: '#f59e0b' },
       { label: 'Open Disputes', value: String(disputes.length), icon: AlertTriangle, color: '#ef4444' },
     ];
-  }, [chain.data, disputes, verifications]);
+  }, [chain.data, disputes]);
 
   async function resolve(escrowId: bigint, landlordShare: number) {
     const key = `${escrowId}-${landlordShare}`;
@@ -102,25 +79,23 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
     }
   }
 
-  function approveVerification(id: string) {
-    setVerifications(prev => prev.map(v => v.id === id ? { ...v, status: 'approved' } : v));
-    toast.success('Verification approved. User will receive verified badge.');
-  }
-
-  function rejectVerification(id: string) {
-    setVerifications(prev => prev.map(v => v.id === id ? { ...v, status: 'rejected' } : v));
-    toast.error('Verification rejected. User will be notified.');
-  }
-
-  function removeFlag(id: string) {
-    setFlags(prev => prev.filter(f => f.id !== id));
-    toast.success('Flag removed.');
+  async function moderate(listingId: string, action: 'hide' | 'unhide') {
+    setModerating(listingId);
+    try {
+      await api(account, `/api/moderation/${action}`, { body: { listingId, reason: reasons[listingId] || undefined } });
+      await Promise.all([hidden.refetch(), qc.invalidateQueries({ queryKey: ['rentflow-hidden'] })]);
+      toast.success(action === 'hide' ? `Listing #${listingId} hidden from tenants.` : `Listing #${listingId} is visible again.`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(/NotAllowedError|cancel/i.test(msg) ? 'Sign-in was cancelled.' : msg);
+    } finally {
+      setModerating(null);
+    }
   }
 
   const TABS = [
     { id: 'overview' as AdminTab, label: 'Overview', icon: BarChart3 },
-    { id: 'verifications' as AdminTab, label: 'Verifications', icon: Shield },
-    { id: 'flags' as AdminTab, label: 'Flagged', icon: Flag },
+    { id: 'moderation' as AdminTab, label: 'Moderation', icon: Flag },
     { id: 'disputes' as AdminTab, label: 'Disputes', icon: AlertTriangle },
   ];
 
@@ -193,73 +168,46 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
               )}
 
               {/* Verifications */}
-              {tab === 'verifications' && (
-                <motion.div key="verif" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-3">
-                  {verifications.map(v => (
-                    <div key={v.id} className="rounded-2xl p-4"
-                      style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', border: '1px solid var(--glass-border)', boxShadow: 'var(--shadow-card)' }}>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div>
-                          <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{v.name}</p>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--subtle)' }}>NIN: {v.nin.slice(0, 5)}••••• · BVN: {v.bvn.slice(0, 5)}•••••</p>
-                          <p className="text-xs" style={{ color: 'var(--subtle)' }}>{v.submittedAt}</p>
+              {tab === 'moderation' && (
+                <motion.div key="moderation" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-3">
+                  <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                    Hide scam, spam or test listings from tenants. Owners can still see and remove their own listings; hiding is reversible.
+                  </p>
+                  {(() => {
+                    const hiddenIds = new Set((hidden.data?.items ?? []).map(h => h.listingId));
+                    const rows = (chain.data?.listings ?? []).filter(l => l.active || hiddenIds.has(String(l.id))).slice().reverse();
+                    if (rows.length === 0) return <p className="text-sm text-center py-10" style={{ color: 'var(--muted)' }}>No listings yet.</p>;
+                    return rows.map(l => {
+                      const id = String(l.id);
+                      const isHidden = hiddenIds.has(id);
+                      const reason = hidden.data?.items.find(h => h.listingId === id)?.reason;
+                      return (
+                        <div key={id} className="rounded-2xl p-4" style={{ background: 'var(--surface-muted)', border: `1px solid ${isHidden ? 'rgba(239,113,134,0.4)' : 'var(--border)'}` }}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm truncate" style={{ color: 'var(--ink)' }}>#{id} · {l.meta.location || 'Untitled'} · {formatNaira(l.rentUsdc)}/yr</p>
+                              <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                                Landlord <span className="mono">{short(l.landlord)}</span>{l.landlordVerifiedAt > 0 ? ' · verified' : ' · not verified'}{l.escrowId !== 0n ? ' · has tenant' : ''}
+                              </p>
+                              {isHidden && <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>Hidden — {reason}</p>}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            {!isHidden && (
+                              <input value={reasons[id] ?? ''} onChange={e => setReasons(r => ({ ...r, [id]: e.target.value.slice(0, 300) }))}
+                                placeholder="Reason (e.g. duplicate of #3, fake photos)" className="flex-1 min-w-0 h-9 px-3 rounded-lg text-xs outline-none"
+                                style={{ background: 'var(--popover)', border: '1px solid var(--border)', color: 'var(--ink)' }} />
+                            )}
+                            <button onClick={() => { void moderate(id, isHidden ? 'unhide' : 'hide'); }} disabled={moderating === id}
+                              className="h-9 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 disabled:opacity-60"
+                              style={isHidden ? { background: 'var(--popover)', color: 'var(--ink)', border: '1px solid var(--border)' } : { background: 'rgba(239,113,134,0.12)', color: 'var(--danger)', border: '1px solid rgba(239,113,134,0.3)' }}>
+                              {moderating === id && <Loader2 className="w-3 h-3 animate-spin" />}{isHidden ? 'Show again' : 'Hide listing'}
+                            </button>
+                          </div>
                         </div>
-                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full"
-                          style={{
-                            background: v.status === 'approved' ? '#dcfce7' : v.status === 'rejected' ? 'rgba(186,43,76,0.1)' : 'rgba(245,158,11,0.12)',
-                            color: v.status === 'approved' ? 'var(--success)' : v.status === 'rejected' ? 'var(--danger)' : '#b45309',
-                          }}>
-                          {v.status.toUpperCase()}
-                        </span>
-                      </div>
-                      {v.status === 'pending' && (
-                        <div className="flex gap-2">
-                          <button onClick={() => approveVerification(v.id)}
-                            className="flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(10,102,56,0.15)' }}>
-                            <CheckCircle2 className="w-3.5 h-3.5" /> {t('approve')}
-                          </button>
-                          <button onClick={() => rejectVerification(v.id)}
-                            className="flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)', border: '1px solid rgba(186,43,76,0.15)' }}>
-                            <X className="w-3.5 h-3.5" /> {t('reject')}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-
-              {/* Flags */}
-              {tab === 'flags' && (
-                <motion.div key="flags" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-3">
-                  {flags.length === 0 ? (
-                    <p className="text-center text-sm py-10" style={{ color: 'var(--muted)' }}>No flagged accounts.</p>
-                  ) : flags.map(f => (
-                    <div key={f.id} className="rounded-2xl p-4"
-                      style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', border: '1px solid rgba(239,68,68,0.2)', boxShadow: 'var(--shadow-card)' }}>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div>
-                          <p className="text-xs font-semibold mono" style={{ color: 'var(--ink)' }}>{f.address}</p>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{f.reason}</p>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--subtle)' }}>{f.flaggedAt}</p>
-                        </div>
-                        <Flag className="w-4 h-4 shrink-0" style={{ color: '#ef4444' }} />
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => removeFlag(f.id)}
-                          className="flex-1 py-2 rounded-xl text-xs font-semibold"
-                          style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(10,102,56,0.15)' }}>
-                          Clear Flag
-                        </button>
-                        <button className="flex-1 py-2 rounded-xl text-xs font-semibold"
-                          style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)', border: '1px solid rgba(186,43,76,0.15)' }}>
-                          Ban Account
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    });
+                  })()}
                 </motion.div>
               )}
 

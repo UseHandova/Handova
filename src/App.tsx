@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AuthGate from '@/components/AuthGate';
 import LanguageWelcome from '@/components/LanguageWelcome';
 import RolePicker from '@/components/RolePicker';
+import { useCaptureReferral } from '@/components/ReferralSystem';
 import Header from '@/components/Header';
 import TabBar from '@/components/TabBar';
 import { navigate as go, rememberRole, rememberedRole, roleFromPath, usePath, type Role } from '@/lib/router';
@@ -48,6 +49,8 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
 
   useEffect(() => { applyTheme(getTheme()); }, []);
+
+  useCaptureReferral(account);
 
   const handleAuth = useCallback((acc: SmartAccount, addr: string) => {
     setAccount(acc); setAddress(addr);

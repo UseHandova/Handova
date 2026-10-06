@@ -1,219 +1,181 @@
 /**
- * MaintenanceTracker — tenants file maintenance requests, landlords resolve them.
- * Keeps both parties in the app between rent cycles.
+ * MaintenanceTracker — real repair requests stored on the server.
+ * Tenants report problems for a home they live in (checked onchain); landlords move them to
+ * in progress / fixed; tenants can confirm a fix or reopen it.
  */
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Wrench, X, Plus, CheckCircle2, Clock, Loader2 } from 'lucide-react';
-import { useLang } from '@/lib/LangContext';
+import { motion } from 'framer-motion';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { X, Wrench, Loader2, Plus, CheckCircle2, RotateCcw, Clock } from 'lucide-react';
+import type { SmartAccount } from 'viem/account-abstraction';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 
 interface Request {
-  id: string;
-  title: string;
-  desc: string;
-  status: 'open' | 'resolved';
-  date: string;
-  priority: 'low' | 'medium' | 'high';
+  id: number; escrowId: string; title: string; details: string; priority: 'low' | 'medium' | 'high';
+  status: 'open' | 'in_progress' | 'resolved'; createdAt: number; updatedAt: number; role: 'tenant' | 'landlord';
 }
-
-const CATEGORIES = ['Plumbing', 'Electrical', 'Roof / Ceiling', 'Doors / Windows', 'Painting', 'Pest Control', 'Other'];
-const PRIORITY_COLORS = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' };
-const DEMO_REQUESTS: Request[] = [
-  { id: 'mq1', title: 'Leaking tap in bathroom', desc: 'The bathroom tap has been dripping for 3 days. Needs urgent fix.', status: 'open', date: '2026-10-01', priority: 'high' },
-  { id: 'mq2', title: 'Broken front door lock', desc: 'Front door lock is stiff and sometimes does not turn.', status: 'resolved', date: '2026-09-15', priority: 'medium' },
-];
 
 interface Props {
+  account: SmartAccount;
+  role: 'tenant' | 'landlord';
+  /** Tenant's live tenancies (escrow id → label), to choose which home a repair is for. */
+  homes?: { escrowId: string; label: string }[];
+  /** Escrow id → home label, for showing requests. */
+  labels?: Record<string, string>;
   onClose: () => void;
-  role?: 'tenant' | 'landlord';
 }
 
-export default function MaintenanceTracker({ onClose, role = 'tenant' }: Props) {
-  const { t } = useLang();
-  const [requests, setRequests] = useState<Request[]>(DEMO_REQUESTS);
-  const [showForm, setShowForm] = useState(false);
+const STATUS: Record<Request['status'], { label: string; color: string }> = {
+  open: { label: 'Open', color: 'var(--warning)' },
+  in_progress: { label: 'In progress', color: '#5b9bd5' },
+  resolved: { label: 'Fixed', color: 'var(--success)' },
+};
+
+export default function MaintenanceTracker({ account, role, homes = [], labels = {}, onClose }: Props) {
+  const qc = useQueryClient();
+  const list = useQuery({
+    queryKey: ['maintenance', account.address],
+    queryFn: () => api<{ requests: Request[] }>(account, '/api/maintenance'),
+    retry: false,
+  });
+  const [adding, setAdding] = useState(false);
+  const [escrowId, setEscrowId] = useState(homes[0]?.escrowId ?? '');
   const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [category, setCategory] = useState('Plumbing');
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
-  const [submitting, setSubmitting] = useState(false);
+  const [details, setDetails] = useState('');
+  const [priority, setPriority] = useState<Request['priority']>('medium');
+  const [busy, setBusy] = useState<string | null>(null);
 
-  async function handleSubmit() {
-    if (!title.trim()) { toast.error('Enter a title for the request.'); return; }
-    setSubmitting(true);
-    await new Promise(r => setTimeout(r, 1000));
-    const nr: Request = {
-      id: `mq${Date.now()}`,
-      title: `${category}: ${title}`,
-      desc,
-      status: 'open',
-      date: new Date().toISOString().slice(0, 10),
-      priority,
-    };
-    setRequests(prev => [nr, ...prev]);
-    setSubmitting(false);
-    setShowForm(false);
-    setTitle(''); setDesc('');
-    toast.success('Maintenance request submitted. Landlord has been notified.');
+  const mine = (list.data?.requests ?? []).filter(r => r.role === role);
+  const refresh = () => qc.invalidateQueries({ queryKey: ['maintenance', account.address] });
+  const fail = (e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    toast.error(/NotAllowedError|cancel/i.test(msg) ? 'Sign-in was cancelled.' : msg);
+  };
+
+  async function create() {
+    setBusy('create');
+    try {
+      await api(account, '/api/maintenance', { body: { escrowId, title, details, priority } });
+      setTitle(''); setDetails(''); setAdding(false);
+      await refresh();
+      toast.success('Repair request sent to your landlord.');
+    } catch (e) { fail(e); } finally { setBusy(null); }
   }
 
-  function markResolved(id: string) {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'resolved' } : r));
-    toast.success('Request marked as resolved.');
+  async function setStatus(id: number, status: Request['status']) {
+    setBusy(`${id}`);
+    try {
+      await api(account, `/api/maintenance/${id}`, { method: 'PATCH', body: { status } });
+      await refresh();
+    } catch (e) { fail(e); } finally { setBusy(null); }
   }
 
-  const open = requests.filter(r => r.status === 'open');
-  const resolved = requests.filter(r => r.status === 'resolved');
+  const input = { background: 'var(--surface-muted)', border: '1px solid var(--border)', color: 'var(--ink)' };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)' }}
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden"
-        style={{
-          background: 'var(--glass-card)', backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)',
-          border: '1px solid var(--glass-border)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
-          maxHeight: '90dvh', overflowY: 'auto',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b" style={{ borderColor: 'var(--border)' }}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+      style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+        role="dialog" aria-modal="true" aria-label="Repairs"
+        className="w-full sm:max-w-lg max-h-[88dvh] overflow-y-auto rounded-t-3xl sm:rounded-3xl"
+        style={{ background: 'var(--popover)', border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2">
-            <Wrench className="w-4.5 h-4.5" style={{ color: 'var(--accent)' }} />
-            <span className="font-bold" style={{ color: 'var(--ink)' }}>{t('maintenance')}</span>
+            <Wrench className="w-5 h-5" style={{ color: 'var(--accent)' }} />
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>{role === 'tenant' ? 'Repairs' : 'Repair requests'}</p>
           </div>
-          <div className="flex items-center gap-2">
-            {role === 'tenant' && (
-              <motion.button whileTap={{ scale: 0.92 }} onClick={() => setShowForm(f => !f)}
-                className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{ background: showForm ? 'var(--accent)' : 'var(--surface-strong)', border: '1px solid var(--border)' }}>
-                <Plus className="w-4 h-4" style={{ color: showForm ? 'white' : 'var(--ink)' }} />
-              </motion.button>
-            )}
-            <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-strong)' }}>
-              <X className="w-4 h-4" style={{ color: 'var(--ink)' }} />
-            </button>
-          </div>
+          <button onClick={onClose} aria-label="Close" className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-muted)' }}>
+            <X className="w-4 h-4" style={{ color: 'var(--ink)' }} />
+          </button>
         </div>
 
-        <div className="px-5 py-5 space-y-4">
-          {/* New request form */}
-          <AnimatePresence>
-            {showForm && (
-              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden space-y-3 pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Category</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {CATEGORIES.map(c => (
-                      <button key={c} onClick={() => setCategory(c)}
-                        className="px-3 py-1.5 rounded-full text-xs font-semibold"
-                        style={category === c ? { background: 'var(--accent)', color: 'white' } : { background: 'var(--surface-strong)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Title</label>
-                  <input value={title} onChange={e => setTitle(e.target.value)}
-                    placeholder="e.g. Leaking kitchen tap"
-                    className="w-full px-4 py-3 rounded-2xl border text-sm outline-none"
-                    style={{ background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--ink)' }} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Description</label>
-                  <textarea value={desc} onChange={e => setDesc(e.target.value)}
-                    placeholder={t('request_desc')} rows={3}
-                    className="w-full px-4 py-3 rounded-2xl border text-sm outline-none resize-none"
-                    style={{ background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--ink)' }} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Priority</label>
-                  <div className="flex gap-2">
-                    {(['low', 'medium', 'high'] as const).map(p => (
-                      <button key={p} onClick={() => setPriority(p)}
-                        className="flex-1 py-2.5 rounded-2xl text-xs font-semibold capitalize border"
-                        style={priority === p
-                          ? { background: PRIORITY_COLORS[p], color: 'white', borderColor: PRIORITY_COLORS[p] }
-                          : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleSubmit(); }} disabled={submitting}
-                  className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{ background: submitting ? 'var(--subtle)' : 'var(--accent)' }}>
-                  {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> : <><Plus className="w-4 h-4" /> {t('submit_request')}</>}
-                </motion.button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {requests.length === 0 ? (
-            <p className="text-center text-sm py-10" style={{ color: 'var(--muted)' }}>{t('no_requests')}</p>
+        <div className="p-5 space-y-4">
+          {role === 'tenant' && (homes.length === 0 ? (
+            <p className="text-sm px-4 py-3 rounded-xl" style={{ background: 'var(--surface-muted)', color: 'var(--muted)' }}>
+              You can report repairs once you've moved into a home through RentFlow.
+            </p>
+          ) : adding ? (
+            <div className="space-y-3 p-4 rounded-2xl" style={{ border: '1px solid var(--border)' }}>
+              {homes.length > 1 && (
+                <select value={escrowId} onChange={e => setEscrowId(e.target.value)} className="w-full h-11 px-3 rounded-xl text-sm" style={input}>
+                  {homes.map(h => <option key={h.escrowId} value={h.escrowId}>{h.label}</option>)}
+                </select>
+              )}
+              <input value={title} onChange={e => setTitle(e.target.value.slice(0, 120))} placeholder="What's wrong? e.g. Leaking kitchen tap"
+                className="w-full h-11 px-4 rounded-xl text-sm outline-none" style={input} />
+              <textarea value={details} onChange={e => setDetails(e.target.value.slice(0, 2000))} rows={3} placeholder="Any details that will help (when it started, which room)…"
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={input} />
+              <div className="flex gap-2">
+                {(['low', 'medium', 'high'] as const).map(p => (
+                  <button key={p} onClick={() => setPriority(p)} className="flex-1 h-9 rounded-lg text-xs font-medium capitalize"
+                    style={priority === p ? { background: 'var(--ink)', color: 'var(--bg)' } : { ...input }}>
+                    {p === 'high' ? 'Urgent' : p}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setAdding(false)} className="h-11 px-4 rounded-xl text-sm" style={{ color: 'var(--muted)' }}>Cancel</button>
+                <button onClick={() => { void create(); }} disabled={busy === 'create' || title.trim().length < 3 || !escrowId}
+                  className="flex-1 h-11 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: 'var(--accent)' }}>
+                  {busy === 'create' && <Loader2 className="w-4 h-4 animate-spin" />} Send to landlord
+                </button>
+              </div>
+            </div>
           ) : (
-            <>
-              {open.length > 0 && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Open ({open.length})</p>
-                  {open.map(r => (
-                    <div key={r.id} className="rounded-2xl p-4 space-y-2"
-                      style={{ background: 'var(--surface-muted)', border: `1px solid ${PRIORITY_COLORS[r.priority]}40` }}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <div className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLORS[r.priority] }} />
-                            <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{r.title}</p>
-                          </div>
-                          <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>{r.desc}</p>
-                          <p className="text-[11px] mt-1" style={{ color: 'var(--subtle)' }}>{r.date}</p>
-                        </div>
-                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full shrink-0 flex items-center gap-1"
-                          style={{ background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>
-                          <Clock className="w-2.5 h-2.5" /> Open
-                        </span>
-                      </div>
-                      {role === 'landlord' && (
-                        <button onClick={() => markResolved(r.id)}
-                          className="w-full py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
-                          style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid rgba(10,102,56,0.15)' }}>
-                          <CheckCircle2 className="w-3.5 h-3.5" /> {t('mark_resolved')}
-                        </button>
-                      )}
+            <button onClick={() => setAdding(true)} className="w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+              style={{ background: 'var(--accent)', color: 'white' }}>
+              <Plus className="w-4 h-4" /> Report a problem
+            </button>
+          ))}
+
+          {list.isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
+          ) : list.isError ? (
+            <p className="text-sm text-center py-6" style={{ color: 'var(--danger)' }}>{(list.error as Error).message}</p>
+          ) : mine.length === 0 ? (
+            <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
+              {role === 'tenant' ? 'No repair requests yet.' : 'No repair requests from your tenants.'}
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {mine.map(r => (
+                <li key={r.id} className="p-4 rounded-2xl space-y-2" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{r.title}</p>
+                      <p className="text-xs" style={{ color: 'var(--muted)' }}>{labels[r.escrowId] ?? `Tenancy #${r.escrowId}`} · {new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}{r.priority === 'high' ? ' · Urgent' : ''}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-              {resolved.length > 0 && (
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Resolved ({resolved.length})</p>
-                  {resolved.map(r => (
-                    <div key={r.id} className="rounded-2xl p-4 flex items-center gap-3"
-                      style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)', opacity: 0.7 }}>
-                      <CheckCircle2 className="w-4 h-4 shrink-0" style={{ color: 'var(--success)' }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{r.title}</p>
-                        <p className="text-xs" style={{ color: 'var(--subtle)' }}>{r.date}</p>
-                      </div>
-                      <span className="text-[10px] font-semibold px-2 py-1 rounded-full"
-                        style={{ background: '#dcfce7', color: 'var(--success)' }}>
-                        {t('request_resolved')}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
+                    <span className="text-[11px] font-semibold px-2 py-1 rounded-full shrink-0" style={{ color: STATUS[r.status].color, background: 'var(--popover)', border: '1px solid var(--border)' }}>
+                      {STATUS[r.status].label}
+                    </span>
+                  </div>
+                  {r.details && <p className="text-sm" style={{ color: 'var(--ink-2)' }}>{r.details}</p>}
+                  <div className="flex gap-2 pt-1">
+                    {role === 'landlord' && r.status === 'open' && (
+                      <button onClick={() => { void setStatus(r.id, 'in_progress'); }} disabled={busy === `${r.id}`}
+                        className="h-9 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: 'var(--popover)', color: 'var(--ink)', border: '1px solid var(--border)' }}>
+                        <Clock className="w-3.5 h-3.5" /> Working on it
+                      </button>
+                    )}
+                    {r.status !== 'resolved' && (
+                      <button onClick={() => { void setStatus(r.id, 'resolved'); }} disabled={busy === `${r.id}`}
+                        className="h-9 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: 'var(--popover)', color: 'var(--success)', border: '1px solid var(--border)' }}>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> {role === 'tenant' ? 'It\'s fixed' : 'Mark fixed'}
+                      </button>
+                    )}
+                    {r.status === 'resolved' && role === 'tenant' && (
+                      <button onClick={() => { void setStatus(r.id, 'open'); }} disabled={busy === `${r.id}`}
+                        className="h-9 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: 'var(--popover)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                        <RotateCcw className="w-3.5 h-3.5" /> Not fixed — reopen
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </motion.div>
