@@ -271,7 +271,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     // Send confirmation back to landlord
     const rentFormatted = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(parsed.rentNgn);
     const replyMsg = parsed.rentNgn > 0
-      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n\n🔑 Your RentFlow code: *${listing.code}*\n${process.env.APP_URL ? `Tap to publish: ${process.env.APP_URL.replace(/\/$/, '')}/?wa=${listing.code}` : 'Open RentFlow → Landlord → WhatsApp and enter this code to publish it.'}`
+      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n\n🔑 Your RentFlow code: *${listing.code}*\n${process.env.APP_URL ? `Tap to publish: ${process.env.APP_URL.replace(/\/$/, '')}/landlord/whatsapp?wa=${listing.code}` : 'Open RentFlow → Landlord → WhatsApp and enter this code to publish it.'}`
       : `I received your message but couldn't find the rent amount. Please reply with: location, rooms, and rent. E.g. "2 bed Yaba 600k per year"`;
 
     res.set('Content-Type', 'text/xml').send(twimlReply(replyMsg));
