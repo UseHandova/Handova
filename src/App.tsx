@@ -131,7 +131,7 @@ function MainApp({ account, address, role, tab, navigate, pendingUsdc, onSignOut
       <ChainStatusBanner />
       <AnimatePresence mode="wait">
         <motion.div key={role === 'tenant' ? tab : role} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="relative z-10">
+          exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
           {role === 'landlord' ? (
             <LandlordDashboard account={account} />
           ) : (
