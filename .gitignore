@@ -21,3 +21,6 @@ traces.jsonl
 .DS_Store
 .vscode/
 .idea/
+
+# server state (hashed NIN links etc.)
+server/data/

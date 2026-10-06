@@ -42,6 +42,8 @@ export interface ChainListing {
   meta: ListingMeta;
   /** Current escrow on this listing, 0n when the property is free to rent. */
   escrowId: bigint;
+  /** Landlord passed identity verification (recorded onchain by the KYC verifier). */
+  landlordVerified: boolean;
 }
 
 export interface ChainEscrow {
@@ -112,8 +114,18 @@ async function fetchChainState(): Promise<ChainState> {
     const row = listingRows[i * 2].result as readonly [Address, bigint, bigint, boolean, string] | undefined;
     const escrowId = (listingRows[i * 2 + 1].result as bigint | undefined) ?? 0n;
     const [landlord, rent, deposit, active, metadataUri] = row ?? ['0x0000000000000000000000000000000000000000', 0n, 0n, false, ''];
-    return { id, landlord, rentUsdc: usdc(rent), depositUsdc: usdc(deposit), active, meta: parseMeta(metadataUri), escrowId };
+    return { id, landlord, rentUsdc: usdc(rent), depositUsdc: usdc(deposit), active, meta: parseMeta(metadataUri), escrowId, landlordVerified: false };
   });
+
+  // Verified badges for every landlord with a listing.
+  const landlords = [...new Set(listings.map(l => l.landlord.toLowerCase()))] as Address[];
+  if (landlords.length > 0) {
+    const verified = await readClient.multicall({
+      contracts: landlords.map(a => ({ ...escrowContract, functionName: 'verifiedAt', args: [a] } as const)),
+    });
+    const isVerified = new Map(landlords.map((a, i) => [a, ((verified[i].result as bigint | undefined) ?? 0n) > 0n]));
+    for (const l of listings) l.landlordVerified = isVerified.get(l.landlord.toLowerCase() as Address) ?? false;
+  }
 
   const byId = new Map(listings.map(l => [l.id, l]));
   const escrows: ChainEscrow[] = escrowIds.map((id, i) => {
@@ -159,6 +171,7 @@ export function useRefreshChain() {
   return () => Promise.all([
     qc.invalidateQueries({ queryKey: CHAIN_KEY }),
     qc.invalidateQueries({ queryKey: ['rentflow-pending'] }),
+    qc.invalidateQueries({ queryKey: ['rentflow-verified'] }),
   ]);
 }
 
@@ -212,4 +225,16 @@ export function useNow() {
     return () => clearInterval(id);
   }, []);
   return now;
+}
+
+/** Unix ms when the address was verified as a landlord (0 = not verified). */
+export function useVerifiedAt(address: string) {
+  return useQuery({
+    queryKey: ['rentflow-verified', ESCROW_ADDRESS, address],
+    queryFn: async () => ms(await readClient.readContract({
+      ...escrowContract, functionName: 'verifiedAt', args: [address as Address],
+    })),
+    enabled: !!ESCROW_ADDRESS && !!address,
+    refetchInterval: 30_000,
+  });
 }

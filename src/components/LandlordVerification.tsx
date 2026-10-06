@@ -1,64 +1,90 @@
 /**
- * LandlordVerification — NIN/BVN identity verification modal.
- * Simulated Prembly-style check. Generates a verified badge on success.
+ * LandlordVerification — real identity check: NIN + selfie face-match via Dojah (server-side),
+ * recorded onchain as RentFlowEscrow.verifiedAt(landlord). The badge is public and survives devices.
+ * The NIN and selfie go only to our server and Dojah; neither is stored.
  */
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BadgeCheck, X, Loader2, AlertCircle, Shield, ChevronRight } from 'lucide-react';
-import { useLang } from '@/lib/LangContext';
+import { BadgeCheck, X, Loader2, AlertCircle, Shield, Camera, ExternalLink } from 'lucide-react';
+import type { SmartAccount } from 'viem/account-abstraction';
 import { toast } from 'sonner';
-
-type VerifyStatus = 'idle' | 'submitting' | 'pending' | 'approved' | 'rejected';
-
-const STORAGE_KEY = 'rentflow_verification';
-
-function loadStatus(): VerifyStatus {
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if (s === 'approved' || s === 'pending') return s;
-  } catch { /* ignore */ }
-  return 'idle';
-}
+import { useLang } from '@/lib/LangContext';
+import { useRefreshChain, useVerifiedAt } from '@/lib/chain';
+import { buildTxExplorerUrl } from '@/onchain-facts';
 
 interface Props {
+  account: SmartAccount;
   onClose: () => void;
 }
 
-export default function LandlordVerification({ onClose }: Props) {
+/** Downscale a photo to a JPEG the KYC provider accepts (and that uploads fast on mobile data). */
+function toJpeg(file: File, maxSide = 900): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => reject(new Error('Could not read that photo.'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+export default function LandlordVerification({ account, onClose }: Props) {
   const { t } = useLang();
-  const [status, setStatus] = useState<VerifyStatus>(loadStatus);
+  const verifiedAt = useVerifiedAt(account.address);
+  const refreshChain = useRefreshChain();
   const [nin, setNin] = useState('');
-  const [bvn, setBvn] = useState('');
   const [selfie, setSelfie] = useState<string | null>(null);
+  const [consent, setConsent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [txHash, setTxHash] = useState('');
 
-  const ninValid = /^\d{11}$/.test(nin);
-  const bvnValid = /^\d{11}$/.test(bvn);
-  const canSubmit = ninValid && bvnValid && selfie;
+  const isVerified = (verifiedAt.data ?? 0) > 0;
+  const canSubmit = /^\d{11}$/.test(nin) && !!selfie && consent && !submitting;
 
-  async function handleSubmit() {
-    if (!canSubmit) return;
-    setStatus('submitting');
-    // Simulate async verification (2s)
-    await new Promise(r => setTimeout(r, 2000));
-    // 90% chance approved, 10% rejected (demo)
-    const approved = Math.random() > 0.1;
-    const newStatus: VerifyStatus = approved ? 'approved' : 'rejected';
-    setStatus(newStatus);
-    localStorage.setItem(STORAGE_KEY, newStatus);
-    if (approved) {
-      toast.success('Identity verified! Your profile now shows a verified badge.');
-    } else {
-      toast.error('Verification failed. Ensure your NIN/BVN match your ID.');
-    }
-  }
-
-  function handleSelfie(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleSelfie(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setSelfie(reader.result as string);
-    reader.readAsDataURL(file);
+    try { setSelfie(await toJpeg(file)); setError(''); } catch { setError('Could not read that photo. Please take another.'); }
+  }
+
+  async function handleSubmit() {
+    if (!canSubmit || !selfie) return;
+    setSubmitting(true); setError('');
+    try {
+      const ch = await fetch(`/api/verify/challenge?address=${account.address}`);
+      if (!ch.ok) throw new Error('Could not start verification. Please try again.');
+      const { nonce, message } = await ch.json() as { nonce: string; message: string };
+
+      // Proves this wallet is yours (Face ID / fingerprint prompt).
+      const signature = await account.signMessage({ message });
+
+      const res = await fetch('/api/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: account.address, nonce, signature, nin, selfie }),
+      });
+      const body = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; txHash?: string };
+      if (!res.ok || !body.ok) throw new Error(body.error ?? 'Verification failed. Please try again.');
+
+      setTxHash(body.txHash ?? '');
+      setNin(''); setSelfie(null);
+      await refreshChain();
+      toast.success('Identity verified! Tenants now see your verified badge.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(/NotAllowedError|cancel/i.test(msg) ? 'Face ID / fingerprint was cancelled. Tap Verify to try again.' : msg);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -72,11 +98,7 @@ export default function LandlordVerification({ onClose }: Props) {
         initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 26 }}
         className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden"
-        style={{
-          background: 'var(--glass-card)', backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)',
-          border: '1px solid var(--glass-border)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
-          maxHeight: '90dvh', overflowY: 'auto',
-        }}
+        style={{ background: 'var(--popover)', border: '1px solid var(--border)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', maxHeight: '90dvh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}
       >
         <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b" style={{ borderColor: 'var(--border)' }}>
@@ -91,10 +113,10 @@ export default function LandlordVerification({ onClose }: Props) {
 
         <div className="px-5 py-5 space-y-4">
           <AnimatePresence mode="wait">
-
-            {/* Approved */}
-            {status === 'approved' && (
-              <motion.div key="approved" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            {verifiedAt.isLoading ? (
+              <div key="loading" className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
+            ) : isVerified ? (
+              <motion.div key="verified" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                 className="flex flex-col items-center text-center py-6 gap-4">
                 <div className="w-20 h-20 rounded-full flex items-center justify-center"
                   style={{ background: 'linear-gradient(135deg, var(--success) 0%, #52e09b 100%)', boxShadow: '0 8px 32px rgba(26,128,71,0.3)' }}>
@@ -102,98 +124,69 @@ export default function LandlordVerification({ onClose }: Props) {
                 </div>
                 <div>
                   <h3 className="display text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>{t('verification_approved')}</h3>
-                  <p className="text-sm" style={{ color: 'var(--muted)' }}>Your profile now shows a verified badge visible to all tenants.</p>
+                  <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                    Verified on {new Date(verifiedAt.data!).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}.
+                    Tenants see the badge on all your listings.
+                  </p>
+                  {txHash && (
+                    <a href={buildTxExplorerUrl(5042002, txHash)} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs mt-2" style={{ color: 'var(--accent)' }}>
+                      View onchain record <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
                 <button onClick={onClose} className="px-8 py-3 rounded-2xl font-semibold text-white"
                   style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
                   Done
                 </button>
               </motion.div>
-            )}
-
-            {/* Pending */}
-            {status === 'pending' && (
-              <motion.div key="pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="flex flex-col items-center text-center py-6 gap-4">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center"
-                  style={{ background: 'rgba(245,158,11,0.15)', border: '2px solid #f59e0b' }}>
-                  <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#f59e0b' }} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg mb-1" style={{ color: 'var(--ink)' }}>{t('verification_pending')}</h3>
-                  <p className="text-sm" style={{ color: 'var(--muted)' }}>We are reviewing your documents. This takes 1-2 business days.</p>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Rejected */}
-            {status === 'rejected' && (
-              <motion.div key="rejected" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl" style={{ background: 'rgba(186,43,76,0.08)', border: '1px solid rgba(186,43,76,0.2)' }}>
-                  <AlertCircle className="w-5 h-5 shrink-0" style={{ color: 'var(--danger)' }} />
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: 'var(--danger)' }}>{t('verification_rejected')}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Ensure your NIN and BVN are correct and your selfie is clear.</p>
-                  </div>
-                </div>
-                <button onClick={() => setStatus('idle')} className="w-full py-3 rounded-2xl font-semibold text-white text-sm"
-                  style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
-                  Try Again
-                </button>
-              </motion.div>
-            )}
-
-            {/* Idle / submitting form */}
-            {(status === 'idle' || status === 'submitting') && (
+            ) : (
               <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
                 <div className="flex items-start gap-3 px-4 py-3 rounded-2xl" style={{ background: 'var(--accent-soft)' }}>
                   <Shield className="w-5 h-5 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
                   <p className="text-xs leading-relaxed" style={{ color: 'var(--accent)' }}>
-                    {t('verify_identity_sub')} Your NIN and BVN are encrypted and never stored in plain text.
+                    We check your NIN with NIMC and match your selfie to your NIN photo. We don't keep your NIN or photo —
+                    only a "verified" mark on your account.
                   </p>
                 </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>NIN</label>
-                    <input value={nin} onChange={e => setNin(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                      placeholder={t('nin_placeholder')} inputMode="numeric"
-                      className="w-full px-4 py-3 rounded-2xl border text-sm outline-none"
-                      style={{ background: 'var(--surface-strong)', borderColor: ninValid ? 'var(--accent)' : 'var(--border)', color: 'var(--ink)' }} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>BVN</label>
-                    <input value={bvn} onChange={e => setBvn(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                      placeholder={t('bvn_placeholder')} inputMode="numeric"
-                      className="w-full px-4 py-3 rounded-2xl border text-sm outline-none"
-                      style={{ background: 'var(--surface-strong)', borderColor: bvnValid ? 'var(--accent)' : 'var(--border)', color: 'var(--ink)' }} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Selfie / ID Photo</label>
-                    <label className="flex items-center gap-3 px-4 py-3 rounded-2xl border cursor-pointer transition-colors"
-                      style={{
-                        background: selfie ? 'var(--accent-soft)' : 'var(--surface-strong)',
-                        borderColor: selfie ? 'var(--accent)' : 'var(--border)',
-                      }}>
-                      <input type="file" accept="image/*" className="sr-only" onChange={handleSelfie} />
-                      {selfie
-                        ? <><BadgeCheck className="w-4 h-4" style={{ color: 'var(--accent)' }} /><span className="text-sm" style={{ color: 'var(--accent)' }}>Photo ready</span></>
-                        : <><ChevronRight className="w-4 h-4" style={{ color: 'var(--muted)' }} /><span className="text-sm" style={{ color: 'var(--muted)' }}>Tap to add photo</span></>
-                      }
-                    </label>
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>NIN (11 digits)</label>
+                  <input value={nin} onChange={e => { setNin(e.target.value.replace(/\D/g, '').slice(0, 11)); setError(''); }}
+                    placeholder={t('nin_placeholder')} inputMode="numeric" autoComplete="off"
+                    className="w-full px-4 py-3 rounded-2xl border text-sm outline-none mono tracking-wider"
+                    style={{ background: 'var(--surface-strong)', borderColor: /^\d{11}$/.test(nin) ? 'var(--accent)' : 'var(--border)', color: 'var(--ink)' }} />
                 </div>
 
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleSubmit(); }}
-                  disabled={!canSubmit || status === 'submitting'}
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Selfie</label>
+                  <label className="flex items-center gap-3 px-4 py-3 rounded-2xl border cursor-pointer"
+                    style={{ background: selfie ? 'var(--accent-soft)' : 'var(--surface-strong)', borderColor: selfie ? 'var(--accent)' : 'var(--border)' }}>
+                    <input type="file" accept="image/*" capture="user" className="sr-only" onChange={e => { void handleSelfie(e); }} />
+                    {selfie
+                      ? <><img src={selfie} alt="" className="w-10 h-10 rounded-xl object-cover" /><span className="text-sm" style={{ color: 'var(--accent)' }}>Selfie ready · tap to retake</span></>
+                      : <><Camera className="w-4 h-4" style={{ color: 'var(--muted)' }} /><span className="text-sm" style={{ color: 'var(--muted)' }}>Take a selfie — face the camera in good light</span></>}
+                  </label>
+                </div>
+
+                <label className="flex items-start gap-2.5 text-xs cursor-pointer" style={{ color: 'var(--muted)' }}>
+                  <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
+                  <span>I agree that RentFlow may check my NIN and selfie with NIMC through Dojah to verify my identity.</span>
+                </label>
+
+                {error && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs" role="alert"
+                    style={{ background: 'rgba(186,43,76,0.08)', border: '1px solid rgba(186,43,76,0.2)', color: 'var(--danger)' }}>
+                    <AlertCircle className="w-4 h-4 shrink-0" /><span className="leading-relaxed">{error}</span>
+                  </div>
+                )}
+
+                <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleSubmit(); }} disabled={!canSubmit}
                   className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{
-                    background: canSubmit && status !== 'submitting' ? 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' : 'var(--subtle)',
-                    boxShadow: canSubmit && status !== 'submitting' ? '0 4px 16px var(--accent-glow)' : 'none',
-                  }}>
-                  {status === 'submitting'
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
-                    : <><BadgeCheck className="w-4 h-4" /> {t('submit_nin')}</>}
+                  style={{ background: canSubmit ? 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' : 'var(--subtle)' }}>
+                  {submitting
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Checking with NIMC…</>
+                    : <><BadgeCheck className="w-4 h-4" /> Verify my identity</>}
                 </motion.button>
               </motion.div>
             )}

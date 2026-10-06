@@ -28,6 +28,7 @@ import express from 'express';
 import cors from 'cors';
 import OpenAI from 'openai';
 import twilio from 'twilio';
+import { mountVerification } from './verification';
 
 const app = express();
 const PORT = 3001;
@@ -35,7 +36,7 @@ const PORT = 3001;
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors({ origin: '*' }));
 app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
+app.use(express.json({ limit: '6mb' })); // selfies for /api/verify are a few MB of base64
 
 // ── AI client ────────────────────────────────────────────────────────────────
 // Groq's API is OpenAI-compatible, so the same SDK talks to either provider.
@@ -135,7 +136,7 @@ Common Nigerian rent abbreviations: 500k = 500,000, 1.2m = 1,200,000, 800k = 800
 If message is in Nigerian Pidgin/Yoruba/Igbo/Hausa, translate and extract accordingly.`;
 
 // ── Parse listing from text ───────────────────────────────────────────────────
-async function parseListingFromText(text: string): Promise<Omit<PendingListing, 'id' | 'from' | 'mediaUrls' | 'rawMessage' | 'parsedAt' | 'status'>> {
+async function parseListingFromText(text: string): Promise<Omit<PendingListing, 'id' | 'code' | 'from' | 'mediaUrls' | 'rawMessage' | 'parsedAt' | 'status'>> {
   const completion = await ai().chat.completions.create({
     model: CHAT_MODEL,
     messages: [
@@ -353,6 +354,8 @@ app.post('/api/bot/reject', (req, res) => {
   listing.status = 'rejected';
   res.json({ ok: true });
 });
+
+mountVerification(app);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

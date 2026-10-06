@@ -9,13 +9,13 @@ import {
   Home, MapPin, Info, Loader2, Check, Upload, X,
   Play, ImagePlus, Building2, ChevronRight, TrendingUp,
   PlusCircle, Eye, BarChart3, List, MessageCircle,
-  CheckCircle2, AlertCircle,
+  CheckCircle2, AlertCircle, BadgeCheck,
 } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira, nairaToUsdc, USDC_TO_NGN } from '@/lib/naira';
 import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
-import { sameAddress, useChainState, useRefreshChain, type ChainEscrow } from '@/lib/chain';
+import { sameAddress, useChainState, useRefreshChain, useVerifiedAt, type ChainEscrow } from '@/lib/chain';
 import LandlordEscrowPanel from '@/components/LandlordEscrowPanel';
 import { bundlerClient } from '@/lib/wallet';
 import { encodeFunctionData } from 'viem';
@@ -87,6 +87,7 @@ export default function LandlordDashboard({ account }: Props) {
   const [done, setDone] = useState(false);
   const chain = useChainState();
   const refreshChain = useRefreshChain();
+  const isVerified = (useVerifiedAt(account.address).data ?? 0) > 0;
 
   // This landlord's listings, read from the escrow contract.
   const listings = useMemo<MockListing[]>(() => {
@@ -711,14 +712,14 @@ export default function LandlordDashboard({ account }: Props) {
         {/* Quick tools row */}
         <div className="grid grid-cols-4 gap-2 mb-4">
           {[
-            { label: t('verify_identity'), icon: CheckCircle2, onClick: () => setShowVerification(true), color: 'var(--accent)' },
+            { label: isVerified ? 'Verified ✓' : t('verify_identity'), icon: isVerified ? BadgeCheck : CheckCircle2, onClick: () => setShowVerification(true), color: isVerified ? 'var(--success)' : 'var(--accent)', active: isVerified },
             { label: t('maintenance'), icon: Home, onClick: () => setShowMaintenance(true), color: '#7c3aed' },
             { label: t('reviews'), icon: TrendingUp, onClick: () => setShowReviews(true), color: '#f59e0b' },
             { label: t('boost_listing').split(' ')[0], icon: BarChart3, onClick: () => listings.length > 0 ? setShowBoost(listings[0].id) : null, color: '#0e7490' },
           ].map(item => (
             <motion.button key={item.label} whileTap={{ scale: 0.93 }} onClick={item.onClick}
               className="flex flex-col items-center gap-1.5 py-3 rounded-2xl text-[10px] font-semibold"
-              style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', border: '1px solid var(--glass-border)', color: item.color }}>
+              style={{ background: 'active' in item && item.active ? 'rgba(26,128,71,0.12)' : 'var(--glass-card)', backdropFilter: 'blur(24px)', border: `1px solid ${'active' in item && item.active ? 'var(--success)' : 'var(--glass-border)'}`, color: item.color }}>
               <item.icon className="w-4 h-4" />
               {item.label}
             </motion.button>
@@ -878,7 +879,7 @@ export default function LandlordDashboard({ account }: Props) {
 
       {/* Feature modals */}
       <AnimatePresence>
-        {showVerification && <LandlordVerification key="verif" onClose={() => setShowVerification(false)} />}
+        {showVerification && <LandlordVerification key="verif" account={account} onClose={() => setShowVerification(false)} />}
         {showBoost && (
           <ListingBoost key="boost"
             listingId={showBoost}

@@ -87,6 +87,7 @@ function fromChain(l: ChainListing): Listing {
     desc: m.description ?? '',
     amenities: m.amenities ?? [],
     color: LISTING_COLORS[Number(l.id % BigInt(LISTING_COLORS.length))],
+    verified: l.landlordVerified,
   };
 }
 
