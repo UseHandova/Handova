@@ -6,7 +6,8 @@
 :root {
   --popover: #ffffff;
   --bg: #f6f8f7;
-  /* Page containers stay transparent so the fixed backdrop on <body> shows through. */
+  /* Page containers stay transparent so the fixed backdrop on <body> shows through.
+     Full-screen overlays must use var(--backdrop) (opaque) instead. */
   --bg-gradient: transparent;
   --backdrop:
     radial-gradient(1100px 560px at 0% -8%, rgba(10, 102, 56, 0.16), transparent 62%),

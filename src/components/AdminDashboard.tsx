@@ -8,7 +8,8 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, publicApi } from '@/lib/api';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { Loader2 } from 'lucide-react';
+import { Loader2, FileCheck2 } from 'lucide-react';
+import { OwnershipReview } from '@/components/OwnershipProof';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Users, Building2, ShieldCheck, AlertTriangle,
@@ -20,7 +21,7 @@ import { toast } from 'sonner';
 import { EscrowStatus } from '@/lib/contracts';
 import { formatCountdown, sendEscrowTx, useChainState, useIsAdmin, useNow, useRefreshChain, DISPUTE_TIMEOUT_MS } from '@/lib/chain';
 
-type AdminTab = 'overview' | 'moderation' | 'disputes';
+type AdminTab = 'overview' | 'moderation' | 'ownership' | 'disputes';
 
 interface Props {
   address: string;
@@ -96,6 +97,7 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
   const TABS = [
     { id: 'overview' as AdminTab, label: 'Overview', icon: BarChart3 },
     { id: 'moderation' as AdminTab, label: 'Moderation', icon: Flag },
+    { id: 'ownership' as AdminTab, label: 'Ownership', icon: FileCheck2 },
     { id: 'disputes' as AdminTab, label: 'Disputes', icon: AlertTriangle },
   ];
 
@@ -103,7 +105,7 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 overflow-y-auto"
-      style={{ background: 'var(--bg-gradient)' }}
+      style={{ background: 'var(--backdrop)' /* opaque: a full-screen overlay must hide the page under it */ }}
     >
       <div className="max-w-2xl mx-auto px-4 pt-6 pb-28">
         {/* Header */}
@@ -212,6 +214,8 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
               )}
 
               {/* Disputes */}
+              {tab === 'ownership' && <OwnershipReview account={account} />}
+
               {tab === 'disputes' && (
                 <motion.div key="disputes" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-3">
                   {disputes.length === 0 && (
