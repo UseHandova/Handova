@@ -22,6 +22,7 @@ import TenantReviews from '@/components/TenantReviews';
 import ReferralSystem from '@/components/ReferralSystem';
 import ListingCard from '@/components/ListingCard';
 import ListingDetail from '@/components/ListingDetail';
+import { useUi } from '@/lib/i18n-ui';
 
 type Furnishing = 'furnished' | 'unfurnished' | 'semi_furnished';
 
@@ -133,6 +134,7 @@ interface Props { account: SmartAccount; }
 
 export default function BrowseListings({ account }: Props) {
   const { t } = useLang();
+  const u = useUi();
   const [query, setQuery] = useState('');
   const [area, setArea] = useState('all_areas');
   const [propertyType, setPropertyType] = useState<PropertyType | 'all'>('all');
@@ -197,7 +199,7 @@ export default function BrowseListings({ account }: Props) {
       {(['yearly', 'monthly'] as const).map(m => (
         <button key={m} onClick={() => setPriceMode(m)} className="flex-1 px-3.5 h-11 text-sm font-medium whitespace-nowrap"
           style={priceMode === m ? { background: 'var(--ink)', color: 'var(--bg)' } : { background: 'var(--surface)', color: 'var(--muted)' }}>
-          {m === 'yearly' ? 'Per year' : 'Per month'}
+          {m === 'yearly' ? u('per_year_btn') : u('per_month_btn')}
         </button>
       ))}
     </div>
@@ -219,7 +221,7 @@ export default function BrowseListings({ account }: Props) {
             <button onClick={() => setShowFilters(f => !f)} aria-expanded={showFilters}
               className="flex items-center gap-2 px-3.5 h-11 rounded-xl text-sm font-medium shrink-0"
               style={chip(showFilters)}>
-              <SlidersHorizontal className="w-4 h-4" /> <span className="hidden sm:inline">Filters</span>
+              <SlidersHorizontal className="w-4 h-4" /> <span className="hidden sm:inline">{u('filters')}</span>
               {activeFilters > 0 && (
                 <span className="w-5 h-5 rounded-full text-[11px] font-bold flex items-center justify-center"
                   style={{ background: 'var(--accent)', color: 'white' }}>{activeFilters}</span>
@@ -265,7 +267,7 @@ export default function BrowseListings({ account }: Props) {
                     </div>
                     <label className="flex items-center gap-2.5 text-sm cursor-pointer" style={{ color: 'var(--ink-2)' }}>
                       <input type="checkbox" checked={verifiedOnly} onChange={e => setVerifiedOnly(e.target.checked)} className="w-4 h-4 accent-[var(--accent)]" />
-                      Verified landlords only
+                      {u('verified_only')}
                     </label>
                     {priceToggle('flex sm:hidden')}
                   </div>
@@ -281,11 +283,11 @@ export default function BrowseListings({ account }: Props) {
         <div className="flex flex-wrap items-end justify-between gap-3 pt-6 pb-5">
           <div>
             <h1 className="text-2xl sm:text-[28px] font-bold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>
-              Homes in Lagos, straight from landlords
+              {u('browse_title')}
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-              {chain.isLoading ? 'Loading listings…' : `${filtered.length} ${showingSamples ? 'sample ' : ''}${filtered.length === 1 ? 'home' : 'homes'}`}
-              {' · '}no agent fees · rent held in escrow until you move in
+              {chain.isLoading ? u('loading_listings') : `${filtered.length} ${showingSamples ? `${u('sample')} ` : ''}${filtered.length === 1 ? u('home') : u('homes')}`}
+              {' · '}{u('browse_sub')}
             </p>
           </div>
           <div className="flex gap-2">
@@ -302,7 +304,7 @@ export default function BrowseListings({ account }: Props) {
 
         {showingSamples && (
           <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: 'var(--surface-muted)', color: 'var(--ink-2)', border: '1px solid var(--border)' }}>
-            No homes are listed yet, so these are <b>sample listings</b> to show how RentFlow works. They can't be rented.
+            {u('samples_notice')}
           </p>
         )}
 
@@ -311,10 +313,10 @@ export default function BrowseListings({ account }: Props) {
           <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 space-y-3">
-            <p className="font-semibold" style={{ color: 'var(--ink)' }}>No homes match these filters</p>
-            <p className="text-sm" style={{ color: 'var(--muted)' }}>Try another area, or clear the filters.</p>
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('no_match')}</p>
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>{u('no_match_sub')}</p>
             <button onClick={clearFilters} className="text-sm font-semibold px-4 py-2 rounded-xl" style={{ background: 'var(--accent)', color: 'white' }}>
-              Clear filters
+              {u('clear_filters')}
             </button>
           </div>
         ) : (

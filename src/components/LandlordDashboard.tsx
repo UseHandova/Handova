@@ -34,6 +34,7 @@ import LandlordVerification from '@/components/LandlordVerification';
 import ListingBoost from '@/components/ListingBoost';
 import MaintenanceTracker from '@/components/MaintenanceTracker';
 import TenantReviews from '@/components/TenantReviews';
+import { useUi } from '@/lib/i18n-ui';
 
 
 interface Props { account: SmartAccount; }
@@ -116,6 +117,7 @@ export default function LandlordDashboard({ account }: Props) {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const { t } = useLang();
+  const u = useUi();
   const [form, setForm] = useState({
     address: '',
     location: '',
@@ -841,19 +843,19 @@ export default function LandlordDashboard({ account }: Props) {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-[28px] font-bold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>Your properties</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>No agents. Tenants pay into escrow and you keep 100% of the rent.</p>
+          <h1 className="text-2xl sm:text-[28px] font-bold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>{u('your_properties')}</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>{u('landlord_sub')}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setDashTab('whatsapp')}
             className="flex items-center gap-1.5 px-4 h-11 rounded-xl text-sm font-medium"
             style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--border)' }}>
-            <MessageCircle className="w-4 h-4" /> List on WhatsApp
+            <MessageCircle className="w-4 h-4" /> {u('list_on_whatsapp')}
           </button>
           <button onClick={() => setView('new-listing')}
             className="flex items-center gap-1.5 px-4 h-11 rounded-xl text-sm font-semibold text-white"
             style={{ background: 'var(--accent)' }}>
-            <PlusCircle className="w-4 h-4" /> List a property
+            <PlusCircle className="w-4 h-4" /> {u('list_a_property')}
           </button>
         </div>
       </div>
@@ -861,9 +863,9 @@ export default function LandlordDashboard({ account }: Props) {
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[
-          { label: 'Listed', value: String(listings.length) },
-          { label: 'Rented', value: String(rentedCount) },
-          { label: 'Rent from tenants / yr', value: formatNaira(annualRent / USDC_TO_NGN) },
+          { label: u('listed'), value: String(listings.length) },
+          { label: u('rented'), value: String(rentedCount) },
+          { label: u('rent_per_year'), value: formatNaira(annualRent / USDC_TO_NGN) },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-2xl p-4" style={tile}>
             <p className="text-xs" style={{ color: 'var(--muted)' }}>{label}</p>
@@ -871,13 +873,13 @@ export default function LandlordDashboard({ account }: Props) {
           </div>
         ))}
         <div className="rounded-2xl p-4 flex flex-col" style={tile}>
-          <p className="text-xs" style={{ color: 'var(--muted)' }}>Ready to withdraw</p>
+          <p className="text-xs" style={{ color: 'var(--muted)' }}>{u('ready_withdraw')}</p>
           <div className="flex items-center justify-between gap-2 mt-1">
             <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(withdrawable)}</p>
             {withdrawable > 0 && (
               <button onClick={() => { void withdraw(); }} disabled={withdrawing}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
-                {withdrawing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Withdraw'}
+                {withdrawing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : u('withdraw')}
               </button>
             )}
           </div>
@@ -888,7 +890,7 @@ export default function LandlordDashboard({ account }: Props) {
       {attention.length > 0 && (
         <section className="mb-6">
           <h2 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--ink)' }}>
-            Needs your attention
+            {u('needs_attention')}
             <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'var(--accent)', color: 'white' }}>{attention.length}</span>
           </h2>
           <div className="grid gap-3 lg:grid-cols-2">
@@ -916,7 +918,7 @@ export default function LandlordDashboard({ account }: Props) {
             ? { background: 'var(--accent-soft)', color: 'var(--success)', border: '1px solid var(--border)' }
             : { background: 'rgba(242,180,90,0.10)', color: 'var(--warning)', border: '1px solid rgba(242,180,90,0.35)' }}>
           {isVerified ? <BadgeCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
-          {isVerified ? 'Identity verified' : 'Verify your identity — tenants trust verified landlords'}
+          {isVerified ? u('identity_verified') : u('verify_cta')}
         </button>
         {[
           { label: t('maintenance'), icon: Wrench, onClick: () => setShowMaintenance(true) },
@@ -934,9 +936,9 @@ export default function LandlordDashboard({ account }: Props) {
       {/* Tabs */}
       <div className="flex gap-6 mb-5" style={{ borderBottom: '1px solid var(--border)' }}>
         {([
-          { id: 'listings' as DashTab, label: 'Properties' },
-          { id: 'whatsapp' as DashTab, label: 'List by WhatsApp' },
-          { id: 'stats' as DashTab, label: 'Insights' },
+          { id: 'listings' as DashTab, label: u('tab_properties') },
+          { id: 'whatsapp' as DashTab, label: u('tab_whatsapp') },
+          { id: 'stats' as DashTab, label: u('tab_insights') },
         ]).map(tab => (
           <button key={tab.id} onClick={() => setDashTab(tab.id)}
             className="pb-3 -mb-px text-sm font-medium transition-colors"
@@ -956,7 +958,7 @@ export default function LandlordDashboard({ account }: Props) {
             ) : listings.length === 0 ? (
               <div className="rounded-2xl p-10 flex flex-col items-center text-center" style={{ border: '1px dashed var(--border-strong)' }}>
                 <Building2 className="w-8 h-8 mb-3" style={{ color: 'var(--subtle)' }} />
-                <p className="font-semibold" style={{ color: 'var(--ink)' }}>No properties yet</p>
+                <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('no_properties')}</p>
                 <p className="text-sm mt-1 mb-5 max-w-sm" style={{ color: 'var(--muted)' }}>
                   List your first property in a few minutes — or send the details to our WhatsApp bot.
                 </p>
@@ -993,12 +995,12 @@ export default function LandlordDashboard({ account }: Props) {
                           <button onClick={() => navigate(`/landlord/edit/${l.id}`)}
                             className="flex-1 h-10 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5"
                             style={{ background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)' }}>
-                            <Pencil className="w-4 h-4" /> Edit
+                            <Pencil className="w-4 h-4" /> {u('edit')}
                           </button>
                           <button onClick={() => { void deleteListing(BigInt(l.id)); }} disabled={deleting === l.id}
                             className="h-10 px-4 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-60"
                             style={{ background: 'transparent', color: 'var(--danger)', border: '1px solid var(--border)' }}>
-                            {deleting === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete
+                            {deleting === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} {u('delete')}
                           </button>
                         </div>
                       )}
