@@ -34,6 +34,8 @@ import { mountAuth } from './auth';
 import { featureConfigFromEnv, mountFeatures } from './features';
 import { mountInspections } from './inspections';
 import { mountChat } from './chat';
+import { handleInboundLogin, mountPhoneAuth } from './phone-auth';
+import { mountOwnership } from './ownership';
 import { openDrafts, type Draft } from './drafts';
 
 const app = express();
@@ -218,6 +220,10 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     const msgBody: string = body.Body ?? '';
     const numMedia = parseInt(body.NumMedia ?? '0', 10);
 
+    // "HANDOVA LOGIN 123456" — someone proving their number for phone sign-in, not a listing.
+    const loginReply = handleInboundLogin(from, msgBody);
+    if (loginReply) { res.set('Content-Type', 'text/xml').send(twimlReply(loginReply)); return; }
+
     const mediaUrls: string[] = [];
     const mediaTypes: string[] = [];
     for (let i = 0; i < numMedia; i++) {
@@ -382,6 +388,8 @@ const whatsappNotify = async (phone: string, body: string) => {
 };
 mountInspections(app, featureConfigFromEnv(), whatsappNotify);
 mountChat(app, featureConfigFromEnv(), whatsappNotify);
+mountPhoneAuth(app);
+mountOwnership(app, featureConfigFromEnv());
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
