@@ -304,6 +304,34 @@ contract RentFlowEscrowTest is Test {
         assertEq(next, id + 1);
     }
 
+    // ── landlord verification registry ──────────────────────────────────────
+
+    function test_verifierRecordsAndRevokesVerification() public {
+        address verifier = makeAddr("verifier");
+        escrow.setVerifier(verifier);
+
+        vm.warp(1_700_000_000);
+        vm.prank(verifier);
+        escrow.setVerified(landlord, true);
+        assertEq(escrow.verifiedAt(landlord), 1_700_000_000);
+
+        vm.prank(verifier);
+        escrow.setVerified(landlord, false);
+        assertEq(escrow.verifiedAt(landlord), 0);
+    }
+
+    function test_onlyVerifierCanVerify() public {
+        vm.prank(landlord);
+        vm.expectRevert(abi.encodeWithSelector(RentFlowEscrow.NotVerifier.selector, landlord));
+        escrow.setVerified(landlord, true);
+    }
+
+    function test_onlyOwnerSetsVerifier() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        escrow.setVerifier(stranger);
+    }
+
     function test_fundsConserved() public {
         uint256 id = _active();
         vm.prank(tenant);

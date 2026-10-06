@@ -4,11 +4,11 @@
 
 | Contract | Address |
 |---|---|
-| RentFlowEscrow | `0xb590c4f6339c454e05668da8f27ce656c463aadc` |
-| RentFlowNFT | `0x38b0daf9ce27205bceedb7dc90b90bad9b44dc5a` |
+| RentFlowEscrow | `0x29993a0e1BF9ef863c10Bfc7171c410DCE9Fe7Ca` |
+| RentFlowNFT | `0x78A84547a4372950b4898DE06c008D83F18D445F` |
 
 USDC (Arc Testnet): `0x3600000000000000000000000000000000000000`
-Owner must call `setNftContract(0x38b0daf9ce27205bceedb7dc90b90bad9b44dc5a)` on the escrow to activate NFT minting on move-in.
+Deployed 2026-10-06 with `contracts/script/DeployRentFlow.s.sol` (NFT already linked). Owner/deployer keystore: `rentflow-deployer` (password in `~/.rentflow-deployer-password`). Verifier (KYC backend key): `0x6380197079a664E358842Bb21d34775B431762cD`.
 
 ---
 

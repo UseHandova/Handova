@@ -58,6 +58,11 @@ contract RentFlowEscrow is Ownable, ReentrancyGuard {
     /// @notice Neutral party (the RentFlow team) that can resolve disputes from submitted evidence.
     address public arbiter;
 
+    /// @notice Backend key allowed to record landlord identity verification (after a KYC match).
+    address public verifier;
+    /// @notice When a landlord's identity was verified (0 = not verified). Public so every tenant can see it.
+    mapping(address => uint256) public verifiedAt;
+
     mapping(uint256 => Listing) public listings;
     mapping(uint256 => Escrow) public escrows;
     mapping(uint256 => uint256) public listingToEscrowId;
@@ -92,6 +97,7 @@ contract RentFlowEscrow is Ownable, ReentrancyGuard {
     error HandoverNotMarked(uint256 escrowId);
     error MoveInWindowOpen(uint256 escrowId);
     error DepositReviewOpen(uint256 escrowId);
+    error NotVerifier(address caller);
 
     event ListingCreated(
         uint256 indexed listingId,
@@ -120,11 +126,29 @@ contract RentFlowEscrow is Ownable, ReentrancyGuard {
     event ArbiterSet(address indexed arbiter);
     event HandoverMarked(uint256 indexed escrowId, address indexed landlord);
     event TenancyEndRequested(uint256 indexed escrowId, address indexed tenant, uint256 depositUnderReview);
+    event VerifierSet(address indexed verifier);
+    event LandlordVerificationChanged(address indexed landlord, bool verified);
 
     constructor(address usdcToken_) Ownable(msg.sender) {
         if (usdcToken_ == address(0)) revert ZeroAddress();
         usdcToken = IERC20(usdcToken_);
         arbiter = msg.sender;
+        verifier = msg.sender;
+    }
+
+    function setVerifier(address verifier_) external onlyOwner {
+        if (verifier_ == address(0)) revert ZeroAddress();
+        verifier = verifier_;
+        emit VerifierSet(verifier_);
+    }
+
+    /// @notice Record (or revoke) a landlord's identity verification. Only the verifier can call this;
+    /// no personal data goes onchain — just the address and a timestamp.
+    function setVerified(address landlord, bool verified) external {
+        if (msg.sender != verifier) revert NotVerifier(msg.sender);
+        if (landlord == address(0)) revert ZeroAddress();
+        verifiedAt[landlord] = verified ? block.timestamp : 0;
+        emit LandlordVerificationChanged(landlord, verified);
     }
 
     function setArbiter(address arbiter_) external onlyOwner {
