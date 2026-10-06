@@ -50,7 +50,7 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 - **Prices in Naira.** Everything is shown in ₦, and USDC runs underneath.
 - **Five languages:** English, Yorùbá, Naija Pidgin, Igbo, Hausa.
 - **Lease certificate NFT**, minted on move-in.
-- **Verified landlords.** NIN + selfie face-match through [Dojah](https://dojah.io); a pass is recorded onchain (`verifiedAt`) so every tenant sees the badge. The NIN and selfie are never stored — only a salted hash of the NIN, to stop one identity verifying many accounts.
+- **Verified landlords.** ID document + liveness + face match through [Didit](https://didit.me) (free tier), or an NIMC NIN lookup + selfie match through [Dojah](https://dojah.io). A pass is recorded onchain (`verifiedAt`) so every tenant sees the badge. ID numbers and photos are never stored — only a salted hash, so one identity can verify only one account.
 - **Photo & video listings.** Landlords upload photos and a video tour; tenants see a photo-first grid, hover to preview the video, and open a full gallery. Files are served by the API server (`/api/media`, local disk via `MEDIA_DIR`) — swap to S3/R2/IPFS for production.
 - Map search, saved searches, inspections, dispute evidence upload, maintenance tracker, lease PDF export, landlord verification.
 
@@ -112,6 +112,7 @@ bun run test:verify
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_NUMBER` | WhatsApp bot | [Twilio Console](https://console.twilio.com) |
 | `GROQ_API_KEY` | Parsing listings & voice notes (free tier) | [Groq Console](https://console.groq.com/keys) |
 | `OPENAI_API_KEY` | Fallback when `GROQ_API_KEY` is empty | [OpenAI Platform](https://platform.openai.com) |
+| `DIDIT_API_KEY` / `DIDIT_WORKFLOW_ID` | Landlord verification (free tier) | [Didit console](https://business.didit.me) → API & Webhooks, Workflows |
 | `DOJAH_APP_ID` / `DOJAH_SECRET_KEY` / `DOJAH_ENV` | Landlord NIN + selfie verification | [Dojah dashboard](https://dojah.io) → Developers → Configuration |
 | `VERIFIER_PRIVATE_KEY` | Server key holding the escrow's verifier role | `cast wallet new`, then `setVerifier` from the owner |
 

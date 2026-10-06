@@ -1,7 +1,9 @@
 /**
- * LandlordVerification — real identity check: NIN + selfie face-match via Dojah (server-side),
- * recorded onchain as RentFlowEscrow.verifiedAt(landlord). The badge is public and survives devices.
- * The NIN and selfie go only to our server and Dojah; neither is stored.
+ * LandlordVerification — real identity check, recorded onchain as RentFlowEscrow.verifiedAt(landlord).
+ * Provider (from /api/verify/config):
+ *   - didit: hosted ID document + liveness + face match; we redirect there and collect the decision on return
+ *   - dojah: NIN + selfie sent through our server for an NIMC lookup and face match
+ * The badge is public and survives devices. RentFlow never stores the ID number or photos.
  */
 
 import { useState } from 'react';
@@ -17,7 +19,11 @@ import { buildTxExplorerUrl } from '@/onchain-facts';
 interface Props {
   account: SmartAccount;
   onClose: () => void;
+  /** Didit session we just returned from (from ?verificationSessionId=…), to collect its result. */
+  diditSessionId?: string;
 }
+
+type CompleteResult = { ok: boolean; code?: string; error?: string; txHash?: string };
 
 /** Downscale a photo to a JPEG the KYC provider accepts (and that uploads fast on mobile data). */
 function toJpeg(file: File, maxSide = 900): Promise<string> {
@@ -37,7 +43,7 @@ function toJpeg(file: File, maxSide = 900): Promise<string> {
   });
 }
 
-export default function LandlordVerification({ account, onClose }: Props) {
+export default function LandlordVerification({ account, onClose, diditSessionId }: Props) {
   const { t } = useLang();
   const verifiedAt = useVerifiedAt(account.address);
   const refreshChain = useRefreshChain();
@@ -54,7 +60,49 @@ export default function LandlordVerification({ account, onClose }: Props) {
   });
 
   const isVerified = (verifiedAt.data ?? 0) > 0;
-  const canSubmit = /^\d{11}$/.test(nin) && !!selfie && consent && !submitting;
+  const isDidit = kycConfig.data?.provider === 'didit';
+  const canSubmit = isDidit ? consent && !submitting : /^\d{11}$/.test(nin) && !!selfie && consent && !submitting;
+
+  // Back from Didit's hosted page: collect the decision once.
+  const [returnSession, setReturnSession] = useState(diditSessionId ?? '');
+  const result = useQuery({
+    queryKey: ['didit-complete', returnSession],
+    enabled: !!returnSession,
+    retry: false,
+    staleTime: Infinity,
+    queryFn: async (): Promise<CompleteResult> => {
+      const res = await fetch('/api/verify/didit/complete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: returnSession }),
+      });
+      const body = await res.json().catch(() => ({ ok: false, error: 'Could not read the result. Please try again.' })) as CompleteResult;
+      if (body.ok) await refreshChain();
+      return body;
+    },
+  });
+  const returnError = returnSession && result.data && !result.data.ok ? result.data : null;
+
+  /** Didit: prove wallet ownership, then hand over to Didit's hosted ID + selfie flow. */
+  async function startDidit() {
+    setSubmitting(true); setError('');
+    try {
+      const ch = await fetch(`/api/verify/challenge?address=${account.address}`);
+      if (!ch.ok) throw new Error('Could not start verification. Please try again.');
+      const { nonce, message } = await ch.json() as { nonce: string; message: string };
+      const signature = await account.signMessage({ message });
+      const res = await fetch('/api/verify/didit/session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: account.address, nonce, signature, returnTo: window.location.origin }),
+      });
+      const body = await res.json().catch(() => ({})) as { ok?: boolean; url?: string; alreadyVerified?: boolean; error?: string };
+      if (!res.ok || !body.ok) throw new Error(body.error ?? 'Could not start verification. Please try again.');
+      if (body.alreadyVerified) { await refreshChain(); return; }
+      window.location.assign(body.url!);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(/NotAllowedError|cancel/i.test(msg) ? 'Face ID / fingerprint was cancelled. Tap Start to try again.' : msg);
+      setSubmitting(false);
+    }
+  }
 
   async function handleSelfie(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -119,7 +167,13 @@ export default function LandlordVerification({ account, onClose }: Props) {
 
         <div className="px-5 py-5 space-y-4">
           <AnimatePresence mode="wait">
-            {verifiedAt.isLoading ? (
+            {returnSession && result.isFetching ? (
+              <div key="collecting" className="flex flex-col items-center gap-3 py-10 text-center">
+                <Loader2 className="w-7 h-7 animate-spin" style={{ color: 'var(--accent)' }} />
+                <p className="font-semibold" style={{ color: 'var(--ink)' }}>Checking your result…</p>
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>This takes a few seconds while we save your badge onchain.</p>
+              </div>
+            ) : verifiedAt.isLoading ? (
               <div key="loading" className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
             ) : isVerified ? (
               <motion.div key="verified" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
@@ -145,6 +199,55 @@ export default function LandlordVerification({ account, onClose }: Props) {
                   style={{ background: 'var(--accent)' }}>
                   Done
                 </button>
+              </motion.div>
+            ) : isDidit ? (
+              <motion.div key="didit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                {returnError && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-sm" role="alert"
+                    style={returnError.code === 'in_review'
+                      ? { background: 'rgba(242,180,90,0.10)', border: '1px solid rgba(242,180,90,0.35)', color: 'var(--ink-2)' }
+                      : { background: 'rgba(186,43,76,0.08)', border: '1px solid rgba(186,43,76,0.2)', color: 'var(--danger)' }}>
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">{returnError.error}</span>
+                  </div>
+                )}
+                {returnError?.code === 'in_review' ? (
+                  <button onClick={() => { void result.refetch(); }}
+                    className="w-full py-3.5 rounded-2xl font-semibold text-sm" style={{ background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)' }}>
+                    Check again
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-2xl" style={{ background: 'var(--accent-soft)' }}>
+                      <Shield className="w-5 h-5 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
+                      <div className="text-sm leading-relaxed" style={{ color: 'var(--ink-2)' }}>
+                        <p className="font-semibold" style={{ color: 'var(--ink)' }}>Takes about 2 minutes</p>
+                        <ol className="list-decimal list-inside mt-1 space-y-0.5">
+                          <li>Photo of your NIN slip, national ID, driver's licence or passport</li>
+                          <li>A short selfie video to prove it's really you</li>
+                        </ol>
+                        <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>Done securely by our partner Didit. RentFlow keeps only a "verified" mark — not your ID or photos.</p>
+                      </div>
+                    </div>
+                    <label className="flex items-start gap-2.5 text-xs cursor-pointer" style={{ color: 'var(--muted)' }}>
+                      <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
+                      <span>I agree that RentFlow's partner Didit may check my ID document and selfie to verify my identity.</span>
+                    </label>
+                    {error && (
+                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs" role="alert"
+                        style={{ background: 'rgba(186,43,76,0.08)', border: '1px solid rgba(186,43,76,0.2)', color: 'var(--danger)' }}>
+                        <AlertCircle className="w-4 h-4 shrink-0" /><span className="leading-relaxed">{error}</span>
+                      </div>
+                    )}
+                    <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setReturnSession(''); void startDidit(); }} disabled={!canSubmit}
+                      className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
+                      style={{ background: canSubmit ? 'var(--accent)' : 'var(--subtle)' }}>
+                      {submitting
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Opening secure verification…</>
+                        : <><BadgeCheck className="w-4 h-4" /> {returnError ? 'Start again' : 'Start verification'}</>}
+                    </motion.button>
+                  </>
+                )}
               </motion.div>
             ) : (
               <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">

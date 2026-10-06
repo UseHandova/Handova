@@ -238,3 +238,138 @@ describe('landlord verification e2e', () => {
     expect(await verifiedAt(a.address)).toBe(0n);
   });
 });
+
+// ── Didit provider ──────────────────────────────────────────────────────────
+describe('landlord verification e2e — Didit', () => {
+  type Scenario = 'approved' | 'face_declined' | 'in_review' | 'in_progress' | 'expired';
+  let didit: ReturnType<typeof Bun.serve>;
+  let diditServer: Server;
+  let url = '';
+  let nextScenario: Scenario = 'approved';
+  let nextDocNumber = 'A00000001';
+  const sessions = new Map<string, { vendor: string; scenario: Scenario; doc: string; callback?: string }>();
+
+  beforeAll(async () => {
+    didit = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        if (req.headers.get('x-api-key') !== 'didit-key') return Response.json({ detail: 'bad key' }, { status: 403 });
+        const path = new URL(req.url).pathname;
+        if (req.method === 'POST' && path === '/v3/session/') {
+          const body = await req.json() as { workflow_id: string; vendor_data: string; callback?: string };
+          if (body.workflow_id !== 'wf-1') return Response.json({ detail: 'bad workflow' }, { status: 400 });
+          const id = crypto.randomUUID();
+          sessions.set(id, { vendor: body.vendor_data, scenario: nextScenario, doc: nextDocNumber, callback: body.callback });
+          return Response.json({ session_id: id, url: `https://verify.didit.me/session/${id.slice(0, 12)}`, status: 'Not Started' }, { status: 201 });
+        }
+        const m = path.match(/^\/v3\/session\/([0-9a-f-]{36})\/decision\/$/);
+        if (req.method === 'GET' && m && sessions.has(m[1])) {
+          const s = sessions.get(m[1])!;
+          const status = { approved: 'Approved', face_declined: 'Declined', in_review: 'In Review', in_progress: 'In Progress', expired: 'Expired' }[s.scenario];
+          return Response.json({
+            status, vendor_data: s.vendor,
+            id_verifications: [{ status: 'Approved', document_type: 'Identity Card', document_number: s.doc, issuing_state: 'NGA', full_name: 'Ada Lovelace' }],
+            liveness_checks: [{ status: 'Approved', score: 92 }],
+            face_matches: [{ status: s.scenario === 'face_declined' ? 'Declined' : 'Approved', score: s.scenario === 'face_declined' ? 21 : 95 }],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      },
+    });
+    const app = express();
+    app.use(express.json({ limit: '6mb' }));
+    mountVerification(app, {
+      rpcUrl: RPC, chain: foundry, escrowAddress: escrow, verifierPrivateKey: VERIFIER_KEY,
+      dojahBaseUrl: 'http://127.0.0.1:1', ninPepper: 'test-pepper', dataFile: `${dataFile}.didit`, threshold: 90,
+      diditApiKey: 'didit-key', diditWorkflowId: 'wf-1', diditBaseUrl: `http://127.0.0.1:${didit.port}`,
+      appOrigins: ['http://localhost:5175'],
+    });
+    ({ server: diditServer, url } = await listen(app));
+  });
+  afterAll(() => { diditServer?.close(); didit?.stop(true); });
+
+  async function start(account: PrivateKeyAccount, opts: { scenario?: Scenario; doc?: string; signer?: PrivateKeyAccount; returnTo?: string } = {}) {
+    nextScenario = opts.scenario ?? 'approved';
+    nextDocNumber = opts.doc ?? `A${Math.floor(Math.random() * 1e8)}`;
+    const ch = await (await fetch(`${url}/api/verify/challenge?address=${account.address}`)).json() as { nonce: string; message: string };
+    const signature = await (opts.signer ?? account).signMessage({ message: ch.message });
+    const res = await fetch(`${url}/api/verify/didit/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: account.address, nonce: ch.nonce, signature, returnTo: opts.returnTo ?? 'http://localhost:5175' }),
+    });
+    return { status: res.status, body: await res.json() as { ok: boolean; code?: string; url?: string; sessionId?: string; alreadyVerified?: boolean } };
+  }
+  const complete = async (sessionId: string) => {
+    const res = await fetch(`${url}/api/verify/didit/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) });
+    return { status: res.status, body: await res.json() as { ok: boolean; code?: string; error?: string; txHash?: string } };
+  };
+
+  test('reports Didit as the active provider', async () => {
+    expect(await (await fetch(`${url}/api/verify/config`)).json()).toEqual({ provider: 'didit', onchain: true, sandbox: false });
+  });
+
+  test('approved session verifies the landlord onchain', async () => {
+    const a = privateKeyToAccount(generatePrivateKey());
+    const s = await start(a, { doc: 'NGA-111' });
+    expect(s.status).toBe(200);
+    expect(s.body.url).toContain('verify.didit.me');
+    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/?kyc=didit');
+    const c = await complete(s.body.sessionId!);
+    expect(c.status).toBe(200);
+    expect(c.body.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(await verifiedAt(a.address)).toBeGreaterThan(0n);
+    // a verified account isn't sent through Didit again
+    expect((await start(a)).body.alreadyVerified).toBe(true);
+  });
+
+  test('the same ID document cannot verify a second account', async () => {
+    const b = privateKeyToAccount(generatePrivateKey());
+    const s = await start(b, { doc: 'NGA-111' });
+    const c = await complete(s.body.sessionId!);
+    expect(c.status).toBe(409);
+    expect(c.body.code).toBe('nin_in_use');
+    expect(await verifiedAt(b.address)).toBe(0n);
+  });
+
+  test('a failed face match is declined and nothing is written', async () => {
+    const a = privateKeyToAccount(generatePrivateKey());
+    const c = await complete((await start(a, { scenario: 'face_declined' })).body.sessionId!);
+    expect(c.status).toBe(422);
+    expect(c.body.code).toBe('declined');
+    expect(c.body.error).toContain('matching your face');
+    expect(await verifiedAt(a.address)).toBe(0n);
+  });
+
+  test('manual review, unfinished and expired sessions are reported, not approved', async () => {
+    const a = privateKeyToAccount(generatePrivateKey());
+    expect((await complete((await start(a, { scenario: 'in_review' })).body.sessionId!)).status).toBe(202);
+    const b = privateKeyToAccount(generatePrivateKey());
+    expect((await complete((await start(b, { scenario: 'in_progress' })).body.sessionId!)).body.code).toBe('not_finished');
+    const c = privateKeyToAccount(generatePrivateKey());
+    expect((await complete((await start(c, { scenario: 'expired' })).body.sessionId!)).body.code).toBe('expired');
+    for (const x of [a, b, c]) expect(await verifiedAt(x.address)).toBe(0n);
+  });
+
+  test('a session id we never issued is rejected', async () => {
+    const c = await complete(crypto.randomUUID());
+    expect(c.status).toBe(404);
+    expect(c.body.code).toBe('unknown_session');
+  });
+
+  test('a foreign return URL is replaced with our own app', async () => {
+    const a = privateKeyToAccount(generatePrivateKey());
+    const s = await start(a, { returnTo: 'https://evil.example' });
+    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/?kyc=didit');
+  });
+
+  test('starting a session requires a signature from the account', async () => {
+    const victim = privateKeyToAccount(generatePrivateKey());
+    const s = await start(victim, { signer: privateKeyToAccount(generatePrivateKey()) });
+    expect(s.status).toBe(401);
+    expect(s.body.code).toBe('bad_signature');
+  });
+
+  test('the raw ID number is never stored', () => {
+    expect(readFileSync(`${dataFile}.didit`, 'utf8')).not.toContain('NGA-111');
+  });
+});

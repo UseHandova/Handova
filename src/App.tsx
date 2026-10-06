@@ -23,8 +23,11 @@ export default function App() {
   const { chosen: langChosen } = useLang();
   const [account, setAccount] = useState<SmartAccount | null>(null);
   const [address, setAddress] = useState('');
-  // A WhatsApp claim link (?wa=123456) is always for a landlord.
-  const [role, setRole] = useState<Role | null>(() => (new URLSearchParams(window.location.search).has('wa') ? 'landlord' : null));
+  // WhatsApp claim links (?wa=…) and returns from identity verification (?kyc=…) are always landlord flows.
+  const [role, setRole] = useState<Role | null>(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.has('wa') || p.has('kyc') || p.has('verificationSessionId') ? 'landlord' : null;
+  });
   const [tab, setTab] = useState<Tab>('browse');
   const pendingUsdc = usePendingWithdrawal(address).data ?? 0;
   const refreshChain = useRefreshChain();
