@@ -76,7 +76,7 @@ const ms = (secs: bigint) => Number(secs) * 1000;
 function parseMeta(uri: string): ListingMeta {
   try {
     const parsed: unknown = JSON.parse(uri);
-    return parsed && typeof parsed === 'object' ? (parsed as ListingMeta) : {};
+    return parsed && typeof parsed === 'object' ? (parsed) : {};
   } catch {
     return { description: uri };
   }
@@ -131,7 +131,7 @@ async function fetchChainState(): Promise<ChainState> {
     const verified = await readClient.multicall({
       contracts: landlords.map(a => ({ ...escrowContract, functionName: 'verifiedAt', args: [a] } as const)),
     });
-    const verifiedAt = new Map(landlords.map((a, i) => [a, ms((verified[i].result as bigint | undefined) ?? 0n)]));
+    const verifiedAt = new Map(landlords.map((a, i) => [a, ms((verified[i].result) ?? 0n)]));
     for (const l of listings) l.landlordVerifiedAt = verifiedAt.get(l.landlord.toLowerCase() as Address) ?? 0;
   }
 
@@ -141,12 +141,12 @@ async function fetchChainState(): Promise<ChainState> {
     const [listingId, tenant, held, status, createdAt] = row ?? [0n, '0x0000000000000000000000000000000000000000', 0n, 0, 0n];
     const opt = (j: number) => ms((escrowRows[i * 4 + j].result as bigint | undefined) ?? 0n);
     return {
-      id, listingId, tenant, heldUsdc: usdc(held), status: status as EscrowStatus, createdAt: ms(createdAt),
+      id, listingId, tenant, heldUsdc: usdc(held), status: status, createdAt: ms(createdAt),
       handoverAt: opt(1), endRequestedAt: opt(2), disputedAt: opt(3), listing: byId.get(listingId),
     };
   });
 
-  return { listings, escrows, arbiter: (arbiter.result as Address | undefined) ?? null };
+  return { listings, escrows, arbiter: (arbiter.result) ?? null };
 }
 
 const CHAIN_KEY = ['rentflow-chain', ESCROW_ADDRESS] as const;
@@ -204,7 +204,7 @@ type EscrowWrite =
 /** Send one escrow call as a gasless user operation and wait for it to land. */
 export async function sendEscrowTx(account: SmartAccount, call: EscrowWrite) {
   if (!ESCROW_ADDRESS) throw new Error('Contract not deployed — set VITE_ESCROW_ADDRESS.');
-  const data = encodeFunctionData({ abi: ESCROW_ABI, ...call } as Parameters<typeof encodeFunctionData>[0]);
+  const data = encodeFunctionData({ abi: ESCROW_ABI, ...call });
   const hash = await bundlerClient.sendUserOperation({
     account,
     calls: [{ to: ESCROW_ADDRESS, data, value: 0n }],

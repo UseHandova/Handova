@@ -143,7 +143,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
                 <Zap className="w-10 h-10" style={{ color: '#f59e0b' }} />
                 <p className="font-bold" style={{ color: 'var(--ink)' }}>{t('boost_active')}</p>
                 <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                  This listing is already boosted until {new Date(current!.endsAt).toLocaleDateString('en-NG')}.
+                  This listing is already boosted until {new Date(current.endsAt).toLocaleDateString('en-NG')}.
                 </p>
                 <button onClick={onClose} className="px-6 py-2.5 rounded-2xl font-semibold text-sm text-white"
                   style={{ background: 'var(--accent)' }}>Close</button>
