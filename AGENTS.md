@@ -20,7 +20,9 @@ This is the **project memory** - what Arc Studio remembers about building this a
 
 ## What This App Does
 
-[Brief description of what the app does and its primary use case]
+Handova lets people in Lagos rent homes directly from landlords, with no agent fees. Tenants find a home, chat with the landlord, and book an inspection that the landlord approves. After both sides confirm the visit, the tenant pays rent and the caution fee in USDC into an escrow contract on Arc. The landlord is paid when the tenant confirms move-in, and the caution fee comes back at move-out unless disputed.
+
+Sign-in uses passkeys (Circle Modular Wallets), or a phone number proven over WhatsApp with a PIN-locked wallet. Landlords can list from the app or by WhatsApp voice note, verify their identity (Didit), and prove property ownership (reviewed by the admin). Prices are shown in Naira.
 
 ## Tech Stack
 
@@ -34,9 +36,19 @@ This is the **project memory** - what Arc Studio remembers about building this a
 
 ## Key Files
 
-- `src/App.tsx` - Main application logic
+- `src/App.tsx` - Main application logic, routing, dev preview (`?preview=app&as=0x…`)
 - `src/components/` - UI components
+- `src/lib/` - chain state (`chain.ts`), API sessions (`api.ts`), inspections, chat, ownership, phone wallets
 - `src/config.ts` - wagmi config (chains, connectors, transports)
+- `server/whatsapp-bot.ts` - API server entry: WhatsApp bot + mounts every module below
+- `server/` - `auth.ts` (signed sessions), `inspections.ts`, `chat.ts`, `phone-auth.ts`, `ownership.ts`, `features.ts` (reviews, repairs, boosts, referrals, moderation), `verification.ts` (Didit/Dojah), `media.ts`, `db.ts` (SQLite)
+
+## Tests
+
+- `bun run test:unit` — pure helpers (`tests/`)
+- `bun run test:server` — end-to-end API tests on Anvil, one file per process (`server/*.e2e.test.ts`)
+- `bun run contracts:test` — Foundry
+- `bun run typecheck`, `bun run typecheck:server`, `bunx oxlint --type-aware src scripts`
 
 ## To Run
 

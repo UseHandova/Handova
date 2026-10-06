@@ -15,7 +15,7 @@ The frontend calls `/api/*`; in production Vercel forwards those requests to the
 ## 1. API server (Railway example)
 
 1. **New project → Deploy from GitHub repo** → pick this repo. Railway detects the `Dockerfile`.
-2. **Add a volume** mounted at **`/app/server/data`** — this holds the SQLite database (drafts, reviews, repairs, boosts, referrals, moderation, verification links) and local uploads. Without it, data is lost on every deploy.
+2. **Add a volume** mounted at **`/app/server/data`** — this holds the SQLite database (drafts, reviews, repairs, boosts, referrals, moderation, verification links, inspections, chat, phone-login backups) and local uploads, including private ownership documents (`server/data/ownership`). Without it, data is lost on every deploy.
 3. **Variables** (Settings → Variables):
 
    | Variable | Value |
