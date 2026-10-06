@@ -235,7 +235,7 @@ export default function BrowseListings({ account }: Props) {
   return (
     <div className="pb-28">
       {/* ── Search + filters (solid, sticky) ── */}
-      <div className="sticky top-[57px] z-30" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+      <div className="sticky top-[57px] z-30 frosted-bar" style={{ borderBottom: '1px solid var(--border)' }}>
         <div className="max-w-6xl mx-auto px-4 py-3 space-y-3">
           <div className="flex gap-2">
             <label className="flex-1 flex items-center gap-2 px-3.5 h-11 rounded-xl"

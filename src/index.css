@@ -5,8 +5,16 @@
 /* ─── Arc Light (default) ───────────────────────────────────────────────── */
 :root {
   --popover: #ffffff;
-  --bg: #f6f7f6;
-  --bg-gradient: #f6f7f6;
+  --bg: #f6f8f7;
+  /* Page containers stay transparent so the fixed backdrop on <body> shows through. */
+  --bg-gradient: transparent;
+  --backdrop:
+    radial-gradient(1100px 560px at 0% -8%, rgba(10, 102, 56, 0.16), transparent 62%),
+    radial-gradient(900px 500px at 100% -4%, rgba(47, 143, 120, 0.12), transparent 58%),
+    radial-gradient(1000px 600px at 50% 115%, rgba(10, 102, 56, 0.07), transparent 60%),
+    linear-gradient(180deg, #f7faf8 0%, #f1f5f2 100%);
+  --grid-dot: rgba(17, 24, 20, 0.09);
+  --bar: rgba(246, 248, 247, 0.78);
   --surface: #ffffff;
   --surface-strong: #ffffff;
   --surface-muted: #eff1f0;
@@ -27,14 +35,21 @@
   --spectral: linear-gradient(90deg, #5fbeff, #af8ff4, #f05c6b, #ffcd83, #7ef1b3);
   --glass-card: #ffffff;
   --glass-border: rgba(17, 24, 20, 0.08);
-  --shadow-card: 0 1px 2px rgba(17,24,20,0.04), 0 4px 16px rgba(17,24,20,0.05);
+  --shadow-card: 0 1px 2px rgba(17,24,20,0.05), 0 10px 28px -14px rgba(17,24,20,0.14);
 }
 
 /* ─── Dark ───────────────────────────────────────────────────────────────── */
 .dark {
   --popover: #1a1e1c;
-  --bg: #0f1211;
-  --bg-gradient: #0f1211;
+  --bg: #0e1110;
+  --bg-gradient: transparent;
+  --backdrop:
+    radial-gradient(1100px 520px at 0% -8%, rgba(31, 158, 97, 0.16), transparent 62%),
+    radial-gradient(900px 480px at 100% -4%, rgba(45, 140, 130, 0.10), transparent 58%),
+    radial-gradient(1000px 600px at 50% 115%, rgba(31, 158, 97, 0.06), transparent 60%),
+    linear-gradient(180deg, #0f1312 0%, #0c0f0e 100%);
+  --grid-dot: rgba(255, 255, 255, 0.05);
+  --bar: rgba(14, 17, 16, 0.72);
   --surface: #161a18;
   --surface-strong: #1c201e;
   --surface-muted: #191d1b;
@@ -66,10 +81,35 @@ body {
   margin: 0;
   font-family: 'DM Sans', sans-serif;
   min-height: 100dvh;
-  background: var(--bg-gradient);
+  background: var(--bg);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   transition: background 0.35s ease, color 0.25s ease;
+}
+
+/* Page backdrop: a soft green glow plus a faint dot grid that fades out down the page.
+   Fixed layers (not background-attachment: fixed) so scrolling stays smooth on phones. */
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+body::before { background: var(--backdrop); }
+body::after {
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 30%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* Frosted bar for sticky toolbars over the backdrop. */
+.frosted-bar {
+  background: var(--bar);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
 }
 
 /* ─── Typography helpers ────────────────────────────────────────────────── */
@@ -168,4 +208,6 @@ body {
   display: none !important;
 }
 /* Without blur, translucent glass gets hard to read — make it solid. */
-.lite { --glass-card: var(--surface-strong); }
+.lite { --glass-card: var(--surface-strong); --bar: var(--bg); }
+/* Keep the cheap gradient, drop the dot grid layer. */
+.lite body::after { display: none; }

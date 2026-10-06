@@ -46,9 +46,9 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
       transition={{ duration: 0.22 }}
       className="sticky top-0 z-50 flex items-center justify-between px-4 py-3 border-b"
       style={{
-        background: 'var(--glass-card)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
+        background: 'var(--bar)',
+        backdropFilter: 'blur(14px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(14px) saturate(160%)',
         borderColor: 'var(--border)',
         boxShadow: '0 1px 0 var(--border)',
       }}
