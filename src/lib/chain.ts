@@ -157,6 +157,19 @@ export function useChainState() {
   });
 }
 
+/** Listing ids the platform has taken down (scams, spam, test data) — hidden from tenants. */
+export function useHiddenListings() {
+  return useQuery({
+    queryKey: ['rentflow-hidden'],
+    queryFn: async () => {
+      const res = await fetch('/api/moderation/hidden');
+      if (!res.ok) return new Set<string>();
+      return new Set(((await res.json()) as { listingIds: string[] }).listingIds);
+    },
+    staleTime: 60_000,
+  });
+}
+
 /** USDC the address can withdraw from the escrow. */
 export function usePendingWithdrawal(address: string) {
   return useQuery({

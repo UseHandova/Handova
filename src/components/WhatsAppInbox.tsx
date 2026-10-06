@@ -2,8 +2,8 @@
  * WhatsAppInbox — "List by WhatsApp" for landlords.
  * 1. Landlord sends house details (text or voice note) to the RentFlow WhatsApp bot.
  * 2. The bot replies with a 6-digit code (and a tap-to-open link when APP_URL is set).
- * 3. Landlord enters the code here, checks the details and publishes from their own wallet —
- *    so they own the listing onchain and receive the rent.
+ * 3. Landlord enters the code here, then reviews it in the full listing form (photos, address on the map,
+ *    any corrections) and publishes from their own wallet — so they own the listing and receive the rent.
  */
 
 import { useState } from 'react';
@@ -11,14 +11,9 @@ import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { MessageCircle, Loader2, MapPin, BedDouble, Check, KeyRound, ExternalLink } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { encodeFunctionData } from 'viem';
-import { toast } from 'sonner';
 import { formatNaira, nairaToUsdc } from '@/lib/naira';
-import { parseAmount } from '@/onchain-money';
-import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
-import { bundlerClient } from '@/lib/wallet';
-import { useRefreshChain } from '@/lib/chain';
 import { waCodeFromUrl } from '@/lib/url';
+import { navigate } from '@/lib/router';
 
 interface Draft {
   code: string;
@@ -38,13 +33,11 @@ interface Props {
 const BOT_NUMBER = ((import.meta.env.VITE_WHATSAPP_BOT_NUMBER as string | undefined) ?? '').replace(/\D/g, '');
 const JOIN_CODE = (import.meta.env.VITE_WHATSAPP_JOIN_CODE as string | undefined) ?? '';
 
-export default function WhatsAppInbox({ account }: Props) {
+export default function WhatsAppInbox(_props: Props) {
   const [initialCode] = useState(waCodeFromUrl);
   const [code, setCode] = useState(initialCode);
   // The code being looked up; set on "Find" (or straight away when arriving via the bot's link).
   const [submitted, setSubmitted] = useState(initialCode);
-  const [publishing, setPublishing] = useState(false);
-  const refreshChain = useRefreshChain();
 
   const lookup = useQuery({
     queryKey: ['wa-draft', submitted],
@@ -68,45 +61,6 @@ export default function WhatsAppInbox({ account }: Props) {
   function find() {
     if (code === submitted) void lookup.refetch();
     else setSubmitted(code);
-  }
-
-  async function publish() {
-    if (!draft) return;
-    if (!ESCROW_ADDRESS) { toast.error('Contract not deployed yet.'); return; }
-    setPublishing(true);
-    try {
-      const calldata = encodeFunctionData({
-        abi: ESCROW_ABI,
-        functionName: 'createListing',
-        args: [
-          parseAmount(5042002, nairaToUsdc(draft.rentNgn).toFixed(6)).raw,
-          parseAmount(5042002, nairaToUsdc(draft.depositNgn).toFixed(6)).raw,
-          JSON.stringify({
-            location: draft.location,
-            rooms: draft.rooms,
-            description: draft.description,
-            amenities: draft.amenities,
-            source: 'whatsapp',
-          }),
-        ],
-      });
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }],
-        paymaster: true,
-      });
-      await bundlerClient.waitForUserOperationReceipt({ hash });
-      const done = await fetch(`/api/bot/draft/${draft.code}/published`, { method: 'POST' })
-        .then(r => r.json() as Promise<{ notified?: boolean }>).catch(() => ({ notified: false }));
-      await refreshChain();
-      toast.success(done.notified ? 'Your property is live! We sent you a WhatsApp confirmation.' : 'Your property is live! Tenants can find it now.');
-      setSubmitted(''); setCode('');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(msg.includes('NotAllowedError') ? 'Passkey cancelled.' : 'Could not publish. Please try again.');
-    } finally {
-      setPublishing(false);
-    }
   }
 
   const waLink = BOT_NUMBER
@@ -198,10 +152,10 @@ export default function WhatsAppInbox({ account }: Props) {
           {draft.rentNgn <= 0 ? (
             <p className="text-xs" style={{ color: 'var(--danger)' }}>We couldn't read the rent. Send the details again on WhatsApp with the rent amount.</p>
           ) : (
-            <button onClick={() => { void publish(); }} disabled={publishing}
+            <button onClick={() => navigate(`/landlord/new?draft=${draft.code}`)}
               className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
               style={{ background: 'var(--accent)' }}>
-              {publishing ? <><Loader2 className="w-4 h-4 animate-spin" /> Publishing…</> : <><Check className="w-4 h-4" /> This is correct — publish my house</>}
+              <Check className="w-4 h-4" /> Review, add photos &amp; publish
             </button>
           )}
         </motion.div>

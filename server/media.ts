@@ -10,7 +10,7 @@
 import express, { type Express, type Request, type Response } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const TYPES: Record<string, { ext: string; kind: 'image' | 'video'; maxBytes: number }> = {
@@ -23,8 +23,35 @@ const TYPES: Record<string, { ext: string; kind: 'image' | 'video'; maxBytes: nu
 };
 const MAX_UPLOADS_PER_HOUR = 60;
 
-export function mountMedia(app: Express, dir = process.env.MEDIA_DIR || 'server/uploads') {
-  const root = resolve(dir);
+const mediaRoot = () => resolve(process.env.MEDIA_DIR || 'server/uploads');
+
+/**
+ * Download a remote file (e.g. a photo a landlord sent on WhatsApp — Twilio media needs basic auth)
+ * into the media store. Returns the public URL, or null if the type/size isn't allowed or the fetch fails.
+ */
+export async function saveRemoteMedia(url: string, auth?: { user: string; pass: string }): Promise<{ url: string; type: 'image' | 'video' } | null> {
+  try {
+    const res = await fetch(url, {
+      headers: auth ? { Authorization: `Basic ${Buffer.from(`${auth.user}:${auth.pass}`).toString('base64')}` } : {},
+      signal: AbortSignal.timeout(30_000),
+    });
+    const mime = (res.headers.get('content-type') ?? '').split(';')[0].trim();
+    const type = TYPES[mime];
+    if (!res.ok || !type) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > type.maxBytes) return null;
+    const root = mediaRoot();
+    mkdirSync(root, { recursive: true });
+    const name = `${randomBytes(12).toString('hex')}.${type.ext}`;
+    writeFileSync(`${root}/${name}`, buf);
+    return { url: `/api/media/${name}`, type: type.kind };
+  } catch {
+    return null;
+  }
+}
+
+export function mountMedia(app: Express, dir?: string) {
+  const root = dir ? resolve(dir) : mediaRoot();
   mkdirSync(root, { recursive: true });
   const perIp = new Map<string, { count: number; resetAt: number }>();
 

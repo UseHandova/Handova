@@ -11,7 +11,7 @@ import type { SmartAccount } from 'viem/account-abstraction';
 import { LAGOS_AREAS, PROPERTY_TYPES, type PropertyType } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import { nairaToUsdc } from '@/lib/naira';
-import { useChainState, type ChainListing } from '@/lib/chain';
+import { useChainState, useHiddenListings, type ChainListing } from '@/lib/chain';
 import PropertyMap from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import InspectionFlow from '@/components/InspectionFlow';
@@ -148,12 +148,15 @@ export default function BrowseListings({ account }: Props) {
   const [showSavedSearches, setShowSavedSearches] = useState(false);
   const [showReferral, setShowReferral] = useState(false);
   const chain = useChainState();
+  const hidden = useHiddenListings().data;
 
   // Live listings that aren't rented yet; samples only until the first real listing exists.
   const listings = useMemo(() => {
-    const live = (chain.data?.listings ?? []).filter(l => l.active && l.escrowId === 0n).map(fromChain).reverse();
+    const live = (chain.data?.listings ?? [])
+      .filter(l => l.active && l.escrowId === 0n && !hidden?.has(String(l.id)))
+      .map(fromChain).reverse();
     return live.length > 0 || !chain.isSuccess ? live : SAMPLE_LISTINGS;
-  }, [chain.data, chain.isSuccess]);
+  }, [chain.data, chain.isSuccess, hidden]);
   const showingSamples = listings[0]?.sample ?? false;
 
   const filtered = listings.filter(l => {
