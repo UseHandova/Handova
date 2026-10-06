@@ -138,8 +138,8 @@ describe('landlord verification e2e', () => {
   const landlord = privateKeyToAccount(generatePrivateKey());
 
   test('reports provider and onchain readiness', async () => {
-    expect(await (await fetch(`${base}/api/verify/config`)).json()).toEqual({ provider: 'dojah', onchain: true });
-    expect(await (await fetch(`${unconfiguredBase}/api/verify/config`)).json()).toEqual({ provider: null, onchain: true });
+    expect(await (await fetch(`${base}/api/verify/config`)).json()).toEqual({ provider: 'dojah', onchain: true, sandbox: false });
+    expect(await (await fetch(`${unconfiguredBase}/api/verify/config`)).json()).toEqual({ provider: null, onchain: true, sandbox: false });
   });
 
   test('matching NIN + selfie verifies the landlord onchain', async () => {
