@@ -94,7 +94,7 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
   const view = (r: Row, me: string, notified?: boolean) => {
     const role = lower(r.tenant) === lower(me) ? 'tenant' : 'landlord';
     return {
-      id: r.id, listingId: r.listing_id, role, place: r.place, status: r.status, slotAt: r.slot_at,
+      id: r.id, listingId: r.listing_id, role, tenant: r.tenant, place: r.place, status: r.status, slotAt: r.slot_at,
       tenantName: r.tenant_name, tenantPhone: r.tenant_phone, landlordPhone: r.landlord_phone,
       note: r.note, landlordNote: r.landlord_note,
       tenantConfirmedAt: r.tenant_confirmed_at, landlordConfirmedAt: r.landlord_confirmed_at,

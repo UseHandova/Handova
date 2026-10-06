@@ -33,6 +33,7 @@ import { mountMedia, saveRemoteMedia } from './media';
 import { mountAuth } from './auth';
 import { featureConfigFromEnv, mountFeatures } from './features';
 import { mountInspections } from './inspections';
+import { mountChat } from './chat';
 import { openDrafts, type Draft } from './drafts';
 
 const app = express();
@@ -366,19 +367,21 @@ mountVerification(app);
 mountMedia(app);
 mountAuth(app);
 mountFeatures(app);
-// Inspection updates also go to WhatsApp when Twilio can deliver them (the sandbox only reaches numbers that
+// Inspection updates and chat nudges also go to WhatsApp when Twilio can deliver them (the sandbox only reaches numbers that
 // joined it, and business-started chats may need a template), so the app never claims a message it didn't send.
-mountInspections(app, featureConfigFromEnv(), async (phone, body) => {
+const whatsappNotify = async (phone: string, body: string) => {
   if (!process.env.TWILIO_WHATSAPP_NUMBER || !process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) return false;
   try {
     await twilioClient.messages.create({ from: process.env.TWILIO_WHATSAPP_NUMBER, to: `whatsapp:+${phone}`, body });
     return true;
   } catch (err) {
     const e = err as { message?: string; code?: number };
-    console.error(`[Handova Bot] Inspection message failed${e.code ? ` (Twilio ${e.code})` : ''}: ${e.message ?? err}`);
+    console.error(`[Handova Bot] WhatsApp notification failed${e.code ? ` (Twilio ${e.code})` : ''}: ${e.message ?? err}`);
     return false;
   }
-});
+};
+mountInspections(app, featureConfigFromEnv(), whatsappNotify);
+mountChat(app, featureConfigFromEnv(), whatsappNotify);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
