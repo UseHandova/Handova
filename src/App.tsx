@@ -26,7 +26,7 @@ export default function App() {
   // WhatsApp claim links (?wa=…) and returns from identity verification (?kyc=…) are always landlord flows.
   const [role, setRole] = useState<Role | null>(() => {
     const p = new URLSearchParams(window.location.search);
-    return p.has('wa') || p.has('kyc') || p.has('verificationSessionId') ? 'landlord' : null;
+    return p.has('wa') || p.has('kyc') || /verificationSessionId=/.test(window.location.href) ? 'landlord' : null;
   });
   const [tab, setTab] = useState<Tab>('browse');
   const pendingUsdc = usePendingWithdrawal(address).data ?? 0;

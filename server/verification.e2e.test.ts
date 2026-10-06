@@ -313,7 +313,7 @@ describe('landlord verification e2e — Didit', () => {
     const s = await start(a, { doc: 'NGA-111' });
     expect(s.status).toBe(200);
     expect(s.body.url).toContain('verify.didit.me');
-    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/?kyc=didit');
+    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/');
     const c = await complete(s.body.sessionId!);
     expect(c.status).toBe(200);
     expect(c.body.txHash).toMatch(/^0x[0-9a-f]{64}$/);
@@ -359,7 +359,7 @@ describe('landlord verification e2e — Didit', () => {
   test('a foreign return URL is replaced with our own app', async () => {
     const a = privateKeyToAccount(generatePrivateKey());
     const s = await start(a, { returnTo: 'https://evil.example' });
-    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/?kyc=didit');
+    expect(sessions.get(s.body.sessionId!)?.callback).toBe('http://localhost:5175/');
   });
 
   test('starting a session requires a signature from the account', async () => {
@@ -367,6 +367,24 @@ describe('landlord verification e2e — Didit', () => {
     const s = await start(victim, { signer: privateKeyToAccount(generatePrivateKey()) });
     expect(s.status).toBe(401);
     expect(s.body.code).toBe('bad_signature');
+  });
+
+  test('resume collects an approved session the user never came back for', async () => {
+    const a = privateKeyToAccount(generatePrivateKey());
+    await start(a);  // user verifies on Didit but the redirect never reaches us
+    const r = await fetch(`${url}/api/verify/didit/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: a.address }) });
+    const body = await r.json() as { ok: boolean; txHash?: string };
+    expect(body.ok).toBe(true);
+    expect(await verifiedAt(a.address)).toBeGreaterThan(0n);
+  });
+
+  test('resume never credits a different account', async () => {
+    const owner = privateKeyToAccount(generatePrivateKey());
+    const other = privateKeyToAccount(generatePrivateKey());
+    await start(owner);
+    const r = await fetch(`${url}/api/verify/didit/resume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: other.address }) });
+    expect((await r.json() as { code?: string }).code).toBe('none');
+    expect(await verifiedAt(other.address)).toBe(0n);
   });
 
   test('the raw ID number is never stored', () => {

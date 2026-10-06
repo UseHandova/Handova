@@ -3,8 +3,9 @@
  * Glass cards, animated media grid, tab navigation, rich stats.
  */
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle, BadgeCheck, Building2, Check, CheckCircle2, ChevronRight, Home, ImagePlus, Info, Loader2, MapPin, MessageCircle, Play, PlusCircle, ShieldAlert, Star, TrendingUp, Upload, Wrench, X,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import WhatsAppInbox from '@/components/WhatsAppInbox';
 import LangSelector from '@/components/LangSelector';
 import { geocodeAddress, PinDropMap } from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { clearReturnParams, diditSessionFromUrl, waCodeFromUrl } from '@/lib/url';
 import { PROPERTY_TYPES, type PropertyType, type TranslationKey } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import LandlordVerification from '@/components/LandlordVerification';
@@ -101,7 +103,7 @@ const springs = {
 
 export default function LandlordDashboard({ account }: Props) {
   const [view, setView] = useState<View>('home');
-  const [dashTab, setDashTab] = useState<DashTab>(() => (new URLSearchParams(window.location.search).has('wa') ? 'whatsapp' : 'listings'));
+  const [dashTab, setDashTab] = useState<DashTab>(() => (waCodeFromUrl() ? 'whatsapp' : 'listings'));
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const { t } = useLang();
@@ -124,7 +126,29 @@ export default function LandlordDashboard({ account }: Props) {
   const [done, setDone] = useState(false);
   const chain = useChainState();
   const refreshChain = useRefreshChain();
-  const isVerified = (useVerifiedAt(account.address).data ?? 0) > 0;
+  // Returning from Didit's hosted page (?verificationSessionId=…): reopen verification to collect the result.
+  const [diditReturn] = useState(diditSessionFromUrl);
+  useEffect(() => { clearReturnParams(); }, []);
+  const verifiedQuery = useVerifiedAt(account.address);
+  const isVerified = (verifiedQuery.data ?? 0) > 0;
+  // Pick up a verification finished elsewhere (another device via Didit's QR code, a closed tab, a lost redirect).
+  useQuery({
+    queryKey: ['didit-resume', account.address],
+    enabled: verifiedQuery.isSuccess && !isVerified && !diditReturn,
+    staleTime: Infinity,
+    retry: false,
+    queryFn: async () => {
+      const res = await fetch('/api/verify/didit/resume', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: account.address }),
+      });
+      const body = await res.json().catch(() => ({ ok: false })) as { ok: boolean };
+      if (body.ok) {
+        await refreshChain();
+        toast.success('Identity verified! Tenants now see your verified badge.');
+      }
+      return body;
+    },
+  });
   const withdrawable = usePendingWithdrawal(account.address).data ?? 0;
   const now = useNow();
   const [withdrawing, setWithdrawing] = useState(false);
@@ -149,13 +173,6 @@ export default function LandlordDashboard({ account }: Props) {
         hasVideo: !!l.meta.media?.some(m => m.type === 'video'),
       }));
   }, [chain.data, account.address]);
-  // Returning from Didit's hosted page (?verificationSessionId=…): reopen verification to collect the result.
-  const [diditReturn] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get('verificationSessionId') ?? '';
-    if (id || params.has('kyc')) window.history.replaceState(null, '', window.location.pathname);
-    return /^[0-9a-f-]{36}$/i.test(id) ? id : '';
-  });
   const [showVerification, setShowVerification] = useState(!!diditReturn);
   const [showBoost, setShowBoost] = useState<string | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);

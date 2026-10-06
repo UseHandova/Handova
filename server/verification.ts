@@ -275,7 +275,8 @@ export function mountVerification(app: Express, config: VerificationConfig = con
       method: 'POST',
       body: JSON.stringify({
         workflow_id: config.diditWorkflowId, vendor_data: account,
-        callback: back ? `${back}/?kyc=didit` : undefined, metadata: { app: 'rentflow' },
+        // No query string of our own: Didit appends ?verificationSessionId=…&status=… to this URL.
+        callback: back ? `${back}/` : undefined, metadata: { app: 'rentflow' },
       }),
     }).catch(() => null);
     const body = await r?.json().catch(() => ({})) as { session_id?: string; url?: string; detail?: string } | undefined;
@@ -289,23 +290,23 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     res.json({ ok: true, url: body.url, sessionId: body.session_id });
   });
 
-  /** After the hosted flow: read Didit's decision and, if approved, record the badge onchain. */
-  app.post('/api/verify/didit/complete', express.json(), async (req: Req, res: Res) => {
-    const { sessionId } = (req.body ?? {}) as Record<string, unknown>;
-    if (typeof sessionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(sessionId)) return fail(res, 400, 'bad_session', 'Invalid verification session.');
-    if (!diditReady() || !chainReady()) return fail(res, 503, 'not_configured', 'Identity verification is not available yet. Please try again later.');
+  type Outcome = { status: number; body: Record<string, unknown> };
+  const out = (status: number, code: string, error: string): Outcome => ({ status, body: { ok: false, code, error } });
+
+  /** Read Didit's decision for one of our sessions and, if approved, record the badge onchain. */
+  async function finishSession(sessionId: string): Promise<Outcome> {
     const session = loadStore().diditSessions?.[sessionId];
-    if (!session) return fail(res, 404, 'unknown_session', 'We could not find that verification. Please start again.');
+    if (!session) return out(404, 'unknown_session', 'We could not find that verification. Please start again.');
 
     const r = await didit(`/v3/session/${sessionId}/decision/`).catch(() => null);
     const d = await r?.json().catch(() => ({})) as DiditDecision | undefined;
-    if (!r || !r.ok || !d) return fail(res, 502, 'provider_error', 'Could not read the verification result. Please try again.');
-    if ((d.vendor_data ?? '').toLowerCase() !== session.address.toLowerCase()) return fail(res, 409, 'session_mismatch', 'This verification belongs to a different account.');
+    if (!r || !r.ok || !d) return out(502, 'provider_error', 'Could not read the verification result. Please try again.');
+    if ((d.vendor_data ?? '').toLowerCase() !== session.address.toLowerCase()) return out(409, 'session_mismatch', 'This verification belongs to a different account.');
 
     const status = d.status ?? '';
-    if (status === 'In Review') return res.status(202).json({ ok: false, code: 'in_review', error: 'Your documents are being reviewed by a person. This usually takes a few minutes — check back soon.' });
-    if (['Not Started', 'In Progress', 'Awaiting User', 'Resubmitted'].includes(status)) return fail(res, 409, 'not_finished', 'Verification isn\'t finished yet. Complete the steps on the verification page.');
-    if (['Expired', 'Abandoned', 'Kyc Expired'].includes(status)) return fail(res, 410, 'expired', 'That verification expired. Please start again.');
+    if (status === 'In Review') return { status: 202, body: { ok: false, code: 'in_review', error: 'Your documents are being reviewed by a person. This usually takes a few minutes — check back soon.' } };
+    if (['Not Started', 'In Progress', 'Awaiting User', 'Resubmitted'].includes(status)) return out(409, 'not_finished', 'Verification isn\'t finished yet. Complete the steps on the verification page.');
+    if (['Expired', 'Abandoned', 'Kyc Expired'].includes(status)) return out(410, 'expired', 'That verification expired. Please start again.');
 
     const doc = d.id_verifications?.[0];
     const failed = [
@@ -314,16 +315,16 @@ export function mountVerification(app: Express, config: VerificationConfig = con
       d.face_matches?.[0] && d.face_matches[0].status !== 'Approved' && 'matching your face to your ID',
     ].filter(Boolean);
     if (status !== 'Approved' || failed.length) {
-      return fail(res, 422, 'declined', `Verification didn't pass${failed.length ? ` (${failed.join(', ')})` : ''}. Use a clear photo of a valid ID and follow the selfie steps in good light.`);
+      return out(422, 'declined', `Verification didn't pass${failed.length ? ` (${failed.join(', ')})` : ''}. Use a clear photo of a valid ID and follow the selfie steps in good light.`);
     }
 
     // One identity document ↔ one account.
     const idNumber = (doc?.personal_number || doc?.document_number || '').replace(/\s/g, '').toUpperCase();
-    if (!idNumber) return fail(res, 422, 'declined', 'We could not read the number on your ID. Please try again with a clearer photo.');
+    if (!idNumber) return out(422, 'declined', 'We could not read the number on your ID. Please try again with a clearer photo.');
     const idHash = ninHash(`${doc?.issuing_state ?? ''}:${idNumber}`);
     const linked = loadStore().ninHashes[idHash];
     if (linked && linked.toLowerCase() !== session.address.toLowerCase()) {
-      return fail(res, 409, 'nin_in_use', 'This ID is already linked to another RentFlow account.');
+      return out(409, 'nin_in_use', 'This ID is already linked to another RentFlow account.');
     }
 
     try {
@@ -331,10 +332,40 @@ export function mountVerification(app: Express, config: VerificationConfig = con
       const store = loadStore();
       if (store.diditSessions) delete store.diditSessions[sessionId];
       saveStore(store);
-      res.json({ ok: true, txHash, firstName: (doc?.full_name ?? '').split(' ')[0] || null });
+      return { status: 200, body: { ok: true, txHash, firstName: (doc?.full_name ?? '').split(' ')[0] || null } };
     } catch (err) {
       console.error('[Verify] Onchain write failed:', err instanceof Error ? err.message : err);
-      return fail(res, 502, 'chain_error', 'You passed the check, but we could not save your badge. Please try again.');
+      return out(502, 'chain_error', 'You passed the check, but we could not save your badge. Please try again.');
     }
+  }
+
+  /** After the hosted flow: collect the result for a specific session. */
+  app.post('/api/verify/didit/complete', express.json(), async (req: Req, res: Res) => {
+    const { sessionId } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof sessionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(sessionId)) return fail(res, 400, 'bad_session', 'Invalid verification session.');
+    if (!diditReady() || !chainReady()) return fail(res, 503, 'not_configured', 'Identity verification is not available yet. Please try again later.');
+    const r = await finishSession(sessionId);
+    res.status(r.status).json(r.body);
+  });
+
+  /**
+   * Collect any finished session this account started but never came back for (closed tab, finished on
+   * another device via Didit's QR code, broken redirect). Only ever credits the account bound to the session.
+   */
+  app.post('/api/verify/didit/resume', express.json(), async (req: Req, res: Res) => {
+    const { address } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof address !== 'string' || !isAddress(address)) return fail(res, 400, 'bad_address', 'Invalid account address.');
+    if (!diditReady() || !chainReady()) return res.json({ ok: false, code: 'not_configured' });
+    const mine = Object.entries(loadStore().diditSessions ?? {})
+      .filter(([, v]) => v.address.toLowerCase() === address.toLowerCase())
+      .sort(([, a], [, b]) => b.createdAt - a.createdAt)
+      .slice(0, 5);
+    let pending: Outcome | null = null;
+    for (const [sessionId] of mine) {
+      const r = await finishSession(sessionId);
+      if (r.body.ok) return res.json(r.body);
+      if (r.body.code === 'in_review' && !pending) pending = r;
+    }
+    res.json(pending?.body ?? { ok: false, code: 'none' });
   });
 }
