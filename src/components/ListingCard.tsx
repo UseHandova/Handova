@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 import { BadgeCheck, Camera, Heart, Home, Play, ShieldAlert } from 'lucide-react';
 import { formatNaira } from '@/lib/naira';
 import { useLang } from '@/lib/LangContext';
+import { OwnershipPill } from '@/components/OwnershipProof';
 import type { Listing } from '@/components/BrowseListings';
 import { useUi } from '@/lib/i18n-ui';
 
@@ -86,7 +87,10 @@ export default function ListingCard({ listing, priceMode, saved, onToggleSave, o
         )}
 
         <div className="absolute inset-x-0 top-0 p-3 flex items-start justify-between gap-2">
-          <VerificationPill listing={listing} />
+          <div className="flex flex-col items-start gap-1.5">
+            <VerificationPill listing={listing} />
+            {!!listing.ownershipCheckedAt && <OwnershipPill />}
+          </div>
           <button
             onClick={e => { e.stopPropagation(); onToggleSave(); }}
             aria-label={saved ? 'Remove from saved' : 'Save'}

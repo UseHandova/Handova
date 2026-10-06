@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, ChevronLeft, ChevronRight, BadgeCheck, ShieldAlert, ShieldCheck, MapPin, Map,
-  Share2, Heart, Star, Home, Play, Info, MessageCircle,
+  Share2, Heart, Star, Home, Play, Info, MessageCircle, FileCheck2, FileQuestion,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/naira';
 import { useLang } from '@/lib/LangContext';
@@ -151,6 +151,15 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
                 <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('trust_unverified_title')}</p>
                 <p className="mt-0.5">{u('trust_unverified_body')}</p>
               </div>
+            </div>
+          )}
+          {!listing.sample && (
+            <div className="flex gap-3 px-4 py-3 rounded-2xl text-sm" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
+              {listing.ownershipCheckedAt
+                ? <><FileCheck2 className="w-5 h-5 shrink-0" style={{ color: 'var(--accent)' }} />
+                    <p style={{ color: 'var(--ink-2)' }}><b style={{ color: 'var(--ink)' }}>Ownership checked.</b> Handova reviewed this landlord's property documents on {new Date(listing.ownershipCheckedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}.</p></>
+                : <><FileQuestion className="w-5 h-5 shrink-0" style={{ color: 'var(--muted)' }} />
+                    <p style={{ color: 'var(--ink-2)' }}><b style={{ color: 'var(--ink)' }}>Ownership not checked yet.</b> At the inspection, ask to see the C of O, deed, or a utility bill in the landlord's name.</p></>}
             </div>
           )}
 
