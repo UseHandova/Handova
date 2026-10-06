@@ -26,6 +26,7 @@ import WhatsAppInbox from '@/components/WhatsAppInbox';
 import LangSelector from '@/components/LangSelector';
 import { geocodeAddress, PinDropMap } from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import InspectionRequests from '@/components/InspectionRequests';
 import { clearReturnParams, diditSessionFromUrl } from '@/lib/url';
 import { usePath } from '@/lib/router';
 import { PROPERTY_TYPES, type PropertyType, type TranslationKey } from '@/lib/i18n';
@@ -980,6 +981,9 @@ export default function LandlordDashboard({ account }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Inspection requests from tenants */}
+      <InspectionRequests account={account} />
 
       {/* Needs your attention */}
       {attention.length > 0 && (

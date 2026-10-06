@@ -4,7 +4,7 @@
  * Every listing states whether its landlord is identity-verified (onchain).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, SlidersHorizontal, X, Bell, Gift, Loader2 } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
@@ -15,7 +15,9 @@ import { useChainState, useHiddenListings, type ChainListing } from '@/lib/chain
 import { useBoosts } from '@/components/ListingBoost';
 import PropertyMap from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { toast } from 'sonner';
 import InspectionFlow from '@/components/InspectionFlow';
+import { formatSlot, inspectionFor, useInspections } from '@/lib/inspections';
 import ShareListing from '@/components/ShareListing';
 import SavedSearches from '@/components/SavedSearches';
 import TenantReviews from '@/components/TenantReviews';
@@ -154,6 +156,16 @@ export default function BrowseListings({ account }: Props) {
   const hidden = useHiddenListings().data;
   const boostsData = useBoosts().data;
   const boosted = useMemo(() => new Set((boostsData?.boosts ?? []).map(b => b.listingId)), [boostsData]);
+  const visits = useInspections(account).inspections;
+  const visitLabel = (l: Listing) => {
+    const v = inspectionFor(visits, l.id);
+    if (!v) return undefined;
+    if (v.canPay) return 'Review & pay';
+    if (v.status === 'requested') return `Visit requested · ${formatSlot(v.slotAt)}`;
+    if (v.status === 'rescheduled') return 'Landlord suggested a new time';
+    if (v.status === 'approved') return `Your visit · ${formatSlot(v.slotAt)}`;
+    return undefined;
+  };
 
   // Live listings that aren't rented yet; samples only until the first real listing exists.
   const listings = useMemo(() => {
@@ -164,6 +176,20 @@ export default function BrowseListings({ account }: Props) {
       .sort((a, b) => Number(boosted.has(String(b.id))) - Number(boosted.has(String(a.id))));
     return live.length > 0 || !chain.isSuccess ? live : SAMPLE_LISTINGS;
   }, [chain.data, chain.isSuccess, hidden, boosted]);
+
+  // ?visit=<listingId> (from WhatsApp updates and My Leases) opens that home's inspection straight away.
+  const visitParam = new URLSearchParams(window.location.search).get('visit');
+  useEffect(() => {
+    if (!visitParam || !chain.isSuccess) return;
+    const l = listings.find(x => String(x.id) === visitParam);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('visit');
+    window.history.replaceState(null, '', url.pathname + url.search);
+    // Opening a modal from a link is syncing with the URL (an external system).
+    // oxlint-disable-next-line react/set-state-in-effect
+    if (l) setFlowListing(l);
+    else toast.error('That home is no longer listed — it may have been rented or removed.');
+  }, [visitParam, chain.isSuccess, listings]);
   const showingSamples = listings[0]?.sample ?? false;
 
   const filtered = listings.filter(l => {
@@ -337,6 +363,7 @@ export default function BrowseListings({ account }: Props) {
             saved={saved.has(detail.id)} onToggleSave={() => toggleSave(detail.id)}
             onClose={() => setDetail(null)}
             onRent={() => { setFlowListing(detail); setDetail(null); }}
+            rentLabel={visitLabel(detail)}
             onMap={() => setMapListing(detail)}
             onShare={() => setShareListing(detail)}
             onReviews={() => setReviewListing(detail)} />

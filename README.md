@@ -16,6 +16,15 @@ Handova replaces the agent's role as trusted middleman with a smart contract. It
 
 ## How it works
 
+**Before paying: inspect.** Payment unlocks only after a real, confirmed inspection:
+
+1. **Chat.** The tenant agrees with the landlord on WhatsApp. This step is optional and can be skipped if they've already agreed.
+2. **Book.** The tenant picks a day and time (Lagos time) and leaves a name and phone number. The landlord gets a notification in the app, plus a WhatsApp message when Twilio can deliver it. They can **approve**, **suggest another time** (the tenant accepts or picks again) or **decline** with a reason.
+3. **Inspect.** After the visit, **both** sides confirm it happened, or report a no-show so the tenant can rebook. If the tenant confirms and the landlord stays silent for 24 hours, the tenant can still continue, since the money waits in escrow anyway.
+4. **Review & pay.** The tenant checks the cost breakdown, ticks three plain-language confirmations, and pays into escrow.
+
+Inspection state lives on the server (`server/inspections.ts`). Each request is tied to the listing's owner as recorded on the blockchain, so it survives reloads and both sides always see the same thing.
+
 ```
 Landlord                         RentFlowEscrow (Arc)                     Tenant
    │  list (app or WhatsApp voice note) │                                    │
