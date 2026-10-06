@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+contracts/out/
+contracts/cache/
+broadcast/
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# local logs / traces from Arc Studio preview
+console.jsonl
+traces.jsonl
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
