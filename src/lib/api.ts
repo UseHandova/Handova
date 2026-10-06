@@ -42,6 +42,11 @@ export function getSession(account: SmartAccount): Promise<string> {
   return inflight.get(k)!;
 }
 
+/** True when a session token is already stored, so a call won't prompt the passkey. */
+export function hasSession(address: string): boolean {
+  return stored(address) !== null;
+}
+
 export function clearSession(address: string) {
   try { localStorage.removeItem(key(address)); } catch { /* storage unavailable */ }
 }

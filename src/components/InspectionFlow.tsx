@@ -1,34 +1,36 @@
 /**
- * InspectionFlow — step-by-step component enforcing inspection before payment.
+ * InspectionFlow — the tenant's path from "I like this home" to "my rent is in escrow".
  *
- * Step 1: "Book Inspection" — tenant taps, records their interest locally,
- *          landlord's WhatsApp number gets a deeplink with property details.
- * Step 2: "Confirm You Visited" — tenant confirms they saw the property.
- * Step 3: "Pay Rent" — USDC escrow flow unlocks only here.
+ *   1. Chat     agree with the landlord on WhatsApp (optional — skip if already agreed)
+ *   2. Book     pick a time; the landlord approves, suggests another time, or declines
+ *   3. Inspect  visit; afterwards both sides confirm it happened
+ *   4. Pay      review what you're paying for, then pay into escrow
  *
- * This is the ONLY path to payment — the Pay Rent button never appears on the
- * listing card directly.
+ * State lives on the server (server/inspections.ts), so it survives reloads and both sides see the same thing.
+ * Payment unlocks only when the server says so (both confirmed, or the landlord stayed silent 24h after the visit).
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  CalendarCheck, Eye, ShieldCheck, Loader2,
-  CheckCircle2, ArrowRight, Phone, X,
-  AlertTriangle,
+  CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, ShieldCheck, X, XCircle, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatNaira, formatUsdc } from "@/lib/naira";
+import { formatNaira, formatUsdc } from '@/lib/naira';
 import { parseAmount } from '@/onchain-money';
 import { ERC20_APPROVE_ABI, ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
-import { useRefreshChain } from '@/lib/chain';
+import { useNow, useRefreshChain } from '@/lib/chain';
 import { bundlerClient } from '@/lib/wallet';
 import { getUsdc } from '@/onchain-facts';
 import { encodeFunctionData, type Hex } from 'viem';
 import type { SmartAccount } from 'viem/account-abstraction';
 import type { Listing } from '@/components/BrowseListings';
-
-type Step = 'idle' | 'booked' | 'visited' | 'paying' | 'paid';
+import SlotPicker from '@/components/SlotPicker';
+import { ApiError } from '@/lib/api';
+import {
+  OUTCOME_OPENS_MS, calendarLink, formatSlot, inspectionFor, prettyPhone, saveContact, savedContact, useInspections, waLink,
+  type Inspection,
+} from '@/lib/inspections';
 
 interface Props {
   listing: Listing;
@@ -36,391 +38,367 @@ interface Props {
   onClose: () => void;
 }
 
-const usdcFact = getUsdc(5042002);
-const USDC_ADDR = (usdcFact?.address ?? '0x3600000000000000000000000000000000000000') as Hex;
+const USDC_ADDR = (getUsdc(5042002)?.address ?? '0x3600000000000000000000000000000000000000') as Hex;
+const STEPS = [
+  { label: 'Chat', icon: MessageCircle },
+  { label: 'Book', icon: CalendarCheck },
+  { label: 'Inspect', icon: Eye },
+  { label: 'Pay', icon: ShieldCheck },
+];
+const CHATTED_KEY = (id: bigint) => `handova_chatted_${id}`;
 
-const springs = { snappy: { type: 'spring', stiffness: 420, damping: 32 } as const };
+function errorMessage(e: unknown) {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/NotAllowedError|cancel/i.test(msg)) return 'Sign-in was cancelled. Tap again and approve with your passkey.';
+  if (/signMessage is not a function/.test(msg)) return 'Sign in with your passkey to book visits.';
+  return msg;
+}
+
+const btn = 'w-full h-12 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-60';
+const primary = { background: 'var(--accent)', color: 'white' };
+const secondary = { background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)' };
+const card = { background: 'var(--surface-muted)', border: '1px solid var(--border)' };
+
+function Spin({ on }: { on: boolean }) {
+  return on ? <Loader2 className="w-4 h-4 animate-spin" /> : null;
+}
+
+function Banner({ tone, icon: Icon, title, children }: { tone: 'good' | 'warn' | 'bad'; icon: React.ElementType; title: string; children?: React.ReactNode }) {
+  const c = tone === 'good' ? 'var(--accent)' : tone === 'warn' ? '#d4a017' : 'var(--danger)';
+  return (
+    <div className="flex gap-3 p-4 rounded-2xl" style={{ background: tone === 'good' ? 'var(--accent-soft)' : 'var(--surface-muted)', border: `1px solid ${tone === 'good' ? 'transparent' : 'var(--border)'}` }}>
+      <Icon className="w-5 h-5 shrink-0 mt-0.5" style={{ color: c }} />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold" style={{ color: tone === 'good' ? 'var(--accent)' : 'var(--ink)' }}>{title}</p>
+        {children && <div className="text-xs mt-1 leading-relaxed space-y-1" style={{ color: 'var(--ink-2)' }}>{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+function WhenWhere({ i, where }: { i: Inspection; where: string }) {
+  return (
+    <div className="rounded-2xl p-4 space-y-2" style={card}>
+      <p className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--ink)' }}><Clock className="w-4 h-4" style={{ color: 'var(--muted)' }} /> {formatSlot(i.slotAt)}</p>
+      <p className="flex items-start gap-2 text-sm" style={{ color: 'var(--ink-2)' }}><MapPin className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--muted)' }} /> {where}</p>
+    </div>
+  );
+}
+
+function ChatLandlord({ phone, text, label = 'Message landlord on WhatsApp' }: { phone: string; text: string; label?: string }) {
+  if (!phone) return null;
+  return (
+    <a href={waLink(phone, text)} target="_blank" rel="noreferrer" className={btn} style={secondary}>
+      <MessageCircle className="w-4 h-4" /> {label}
+    </a>
+  );
+}
 
 export default function InspectionFlow({ listing, account, onClose }: Props) {
-  const [step, setStep] = useState<Step>('idle');
-  const [paying, setPaying] = useState(false);
+  const ins = useInspections(account);
   const refreshChain = useRefreshChain();
-
-
+  const current = inspectionFor(ins.inspections, listing.id);
   const landlordPhone = (listing.landlordPhone ?? '').replace(/\D/g, '');
+  const own = !!listing.landlord && listing.landlord.toLowerCase() === account.address.toLowerCase();
 
-  function bookInspection() {
-    if (listing.sample) {
-      toast.info('This is a sample listing — there is no real landlord to contact.');
-      return;
-    }
-    if (landlordPhone) {
-      const text = encodeURIComponent(
-        `Hello, I saw your property at ${listing.address || listing.location} on Handova and would like to book an inspection.`
-      );
-      window.open(`https://wa.me/${landlordPhone}?text=${text}`, '_blank');
-    }
-    setStep('booked');
+  // Opening this is a deliberate tap, so it's a fair moment to sign in and load any existing visit.
+  useEffect(() => { if (!listing.sample && !own && !ins.connected) ins.connect(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [chatted, setChatted] = useState(() => { try { return !!localStorage.getItem(CHATTED_KEY(listing.id)); } catch { return false; } });
+  const [rebooking, setRebooking] = useState(false);
+  const [slot, setSlot] = useState<number | null>(null);
+  const [contact, setContact] = useState(savedContact);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [checks, setChecks] = useState([false, false, false]);
+  const [paid, setPaid] = useState(false);
+  const now = useNow();
+
+  const open = current && ['requested', 'rescheduled', 'approved'].includes(current.status);
+  type Screen = 'chat' | 'book' | 'waiting' | 'suggested' | 'upcoming' | 'outcome' | 'pay' | 'paid';
+  const screen: Screen = paid ? 'paid'
+    : current?.canPay ? 'pay'
+    : rebooking ? 'book'
+    : current?.status === 'requested' ? 'waiting'
+    : current?.status === 'rescheduled' ? 'suggested'
+    : current?.status === 'approved' ? (now >= current.slotAt - OUTCOME_OPENS_MS ? 'outcome' : 'upcoming')
+    : !chatted && landlordPhone && !current ? 'chat'
+    : 'book';
+  const stepIdx = { chat: 0, book: 1, waiting: 1, suggested: 1, upcoming: 2, outcome: 2, pay: 3, paid: 4 }[screen];
+
+  async function run(key: string, fn: () => Promise<Inspection | void>, ok?: (i: Inspection) => string) {
+    setBusy(key);
+    try {
+      const i = await fn();
+      if (i && ok) toast.success(ok(i));
+      return i;
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'already_booked') { await ins.refresh(); setRebooking(false); toast.info('You already have a visit for this home — here it is.'); return; }
+      toast.error(errorMessage(e));
+    } finally { setBusy(null); }
   }
 
-  function confirmVisit() {
-    setStep('visited');
+  function openChat() {
+    const text = `Hello, I saw your property at ${listing.address || listing.location} on Handova. Is it still available? I'd like to arrange an inspection.`;
+    window.open(waLink(landlordPhone, text), '_blank');
+    try { localStorage.setItem(CHATTED_KEY(listing.id), '1'); } catch { /* storage unavailable */ }
+    setChatted(true);
   }
 
-  async function handlePay() {
-    if (listing.sample) {
-      toast.info('This is a sample listing. Real listings appear here once landlords list onchain.');
-      return;
-    }
-    if (!ESCROW_ADDRESS) {
-      toast.error('Contract not deployed — set VITE_ESCROW_ADDRESS first.');
-      return;
-    }
-    setPaying(true);
+  async function submitBooking() {
+    if (!slot) { toast.error('Pick a day and a time for your visit.'); return; }
+    if (contact.name.trim().length < 2) { toast.error('Add your name so the landlord knows who is coming.'); return; }
+    if (contact.phone.replace(/\D/g, '').length < 10) { toast.error('Add a phone number the landlord can reach you on, e.g. 0803 123 4567.'); return; }
+    saveContact(contact);
+    const reschedule = rebooking && open;
+    await run('book', () => reschedule
+      ? ins.act(current.id, 'reschedule', { slotAt: slot, note })
+      : ins.book({ listingId: String(listing.id), slotAt: slot, name: contact.name, phone: contact.phone, note }),
+    i => i.notified ? 'Request sent. The landlord got a WhatsApp message and a notification in Handova.' : 'Request sent. The landlord will see it in Handova.');
+    setRebooking(false);
+  }
+
+  async function pay() {
+    if (!ESCROW_ADDRESS) { toast.error('Contract not deployed — set VITE_ESCROW_ADDRESS first.'); return; }
+    setBusy('pay');
     try {
       const total = parseAmount(5042002, (listing.rentUsdc + listing.depositUsdc).toString());
-      const approveCalldata = encodeFunctionData({
-        abi: ERC20_APPROVE_ABI,
-        functionName: 'approve',
-        args: [ESCROW_ADDRESS, total.raw],
-      });
-      const depositCalldata = encodeFunctionData({ abi: ESCROW_ABI, functionName: 'depositRent', args: [listing.id] });
-
       const hash = await bundlerClient.sendUserOperation({
         account,
         calls: [
-          { to: USDC_ADDR, data: approveCalldata, value: 0n },
-          { to: ESCROW_ADDRESS, data: depositCalldata, value: 0n },
+          { to: USDC_ADDR, data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: 'approve', args: [ESCROW_ADDRESS, total.raw] }), value: 0n },
+          { to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'depositRent', args: [listing.id] }), value: 0n },
         ],
         paymaster: true,
       });
-      toast.promise(bundlerClient.waitForUserOperationReceipt({ hash }), {
-        loading: 'Depositing rent to escrow…',
-        success: 'Rent in escrow! Confirm move-in once you get the keys.',
-        error: 'Transaction failed.',
-      });
       await bundlerClient.waitForUserOperationReceipt({ hash });
       void refreshChain();
-      setStep('paid');
+      setPaid(true);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(msg.includes('NotAllowedError') ? 'Passkey cancelled.' : 'Could not deposit. Check USDC balance.');
-    } finally {
-      setPaying(false);
-    }
+      toast.error(msg.includes('NotAllowedError') ? 'Payment cancelled — nothing was charged.' : /insufficient|exceeds balance/i.test(msg)
+        ? `Not enough USDC. You need ${formatUsdc(listing.rentUsdc + listing.depositUsdc)} in your wallet.` : 'Payment failed — nothing was charged. Please try again.');
+    } finally { setBusy(null); }
   }
 
-  const STEPS = [
-    { id: 'booked', label: 'Book Inspection', icon: CalendarCheck },
-    { id: 'visited', label: 'Confirm Visit', icon: Eye },
-    { id: 'paid', label: 'Pay Rent', icon: ShieldCheck },
-  ];
-
-  const currentIdx = step === 'idle' ? -1 : step === 'booked' ? 0 : step === 'visited' || step === 'paying' ? 1 : 2;
+  const total = listing.rentUsdc + listing.depositUsdc;
 
   return (
-    <motion.div
-      key="inspection-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(10px)' }}
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ y: 100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 100, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-        className="w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl overflow-hidden"
-        style={{
-          background: 'var(--glass-card)',
-          backdropFilter: 'blur(32px)',
-          border: '1px solid var(--glass-border)',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
-          maxHeight: '90dvh',
-          overflowY: 'auto',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
+      <motion.div initial={{ y: 60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 60, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+        role="dialog" aria-modal="true" aria-label="Inspect and rent"
+        className="w-full sm:max-w-lg max-h-[92dvh] overflow-y-auto rounded-t-3xl sm:rounded-3xl"
+        style={{ background: 'var(--popover)', border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
+
         {/* Header */}
-        <div className="px-5 pt-5 pb-4 flex items-center justify-between border-b" style={{ borderColor: 'var(--border)' }}>
-          <div>
-            <p className="font-bold" style={{ color: 'var(--ink)' }}>
-              {listing.title ?? listing.location}
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{listing.address || listing.location}</p>
+        <div className="sticky top-0 z-10 px-5 pt-5 pb-4 border-b" style={{ background: 'var(--popover)', borderColor: 'var(--border)' }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-bold truncate" style={{ color: 'var(--ink)' }}>{listing.title ?? listing.location}</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{formatNaira(listing.rentUsdc)}/yr · {formatNaira(listing.depositUsdc)} caution</p>
+            </div>
+            <button onClick={onClose} aria-label="Close" className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center" style={{ background: 'var(--surface-muted)' }}>
+              <X className="w-4 h-4" style={{ color: 'var(--ink)' }} />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{ background: 'var(--surface-strong)' }}
-          >
-            <X className="w-4 h-4" style={{ color: 'var(--ink)' }} />
-          </button>
+          {/* Progress */}
+          <ol className="grid grid-cols-4 gap-1.5 mt-4" aria-label="Progress">
+            {STEPS.map((s, i) => (
+              <li key={s.label} aria-current={i === stepIdx ? 'step' : undefined}>
+                <span className="block h-1 rounded-full mb-1.5" style={{ background: i <= stepIdx ? 'var(--accent)' : 'var(--border)' }} />
+                <span className="text-[11px] font-semibold" style={{ color: i === stepIdx ? 'var(--ink)' : i < stepIdx ? 'var(--accent)' : 'var(--subtle)' }}>{i + 1}. {s.label}</span>
+              </li>
+            ))}
+          </ol>
         </div>
 
-        <div className="px-5 py-5 space-y-5">
+        <div className="px-5 py-5 space-y-4">
+          {listing.sample ? (
+            <Banner tone="warn" icon={AlertTriangle} title="This is a sample listing">There's no real landlord behind it. Real homes appear here once landlords list them.</Banner>
+          ) : own ? (
+            <Banner tone="warn" icon={AlertTriangle} title="This is your own listing">Tenants book visits here; you'll approve them from your landlord dashboard.</Banner>
+          ) : ins.connected && ins.isLoading ? (
+            <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.div key={screen} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.15 }} className="space-y-4">
 
-          {/* Step progress bar */}
-          <div className="flex items-center gap-2">
-            {STEPS.map((s, i) => {
-              const done = i <= currentIdx;
-              const active = i === currentIdx + 1;
-              return (
-                <div key={s.id} className="flex items-center gap-2 flex-1">
-                  <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all"
-                    style={{
-                      background: done ? 'var(--accent)' : active ? 'var(--accent-soft)' : 'var(--surface-strong)',
-                      border: active ? '2px solid var(--accent)' : 'none',
-                    }}
-                  >
-                    {done
-                      ? <CheckCircle2 className="w-4 h-4 text-white" />
-                      : <s.icon className="w-3.5 h-3.5" style={{ color: active ? 'var(--accent)' : 'var(--subtle)' }} />
-                    }
+                {/* 1 — Chat first */}
+                {screen === 'chat' && (<>
+                  <div>
+                    <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Talk to the landlord first</h3>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Ask your questions and agree that you'll come and see it. Then come back here to book the visit — it keeps you both on the same page.</p>
                   </div>
-                  <span className="text-[10px] font-semibold hidden sm:inline" style={{ color: done ? 'var(--accent)' : 'var(--muted)' }}>
-                    {s.label}
-                  </span>
-                  {i < STEPS.length - 1 && (
-                    <div className="flex-1 h-px mx-1" style={{ background: done ? 'var(--accent)' : 'var(--border)' }} />
+                  <button onClick={openChat} className={btn} style={primary}><MessageCircle className="w-4 h-4" /> Chat on WhatsApp</button>
+                  <button onClick={() => setChatted(true)} className={btn} style={secondary}>We've already agreed — book a visit</button>
+                  <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>Never pay anyone before you've inspected the home. Handova never asks for an inspection fee.</p>
+                </>)}
+
+                {/* 2 — Book (also used to pick a new time) */}
+                {screen === 'book' && (<>
+                  {!rebooking && current?.status === 'declined' && (
+                    <Banner tone="bad" icon={XCircle} title="The landlord couldn't do that time">{current.landlordNote ? <p>"{current.landlordNote}"</p> : null}<p>Pick another time below{landlordPhone ? ', or message them to agree one first' : ''}.</p></Banner>
                   )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Price summary */}
-          <div
-            className="rounded-2xl px-4 py-3 flex items-center justify-between"
-            style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}
-          >
-            <div>
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>Annual Rent</p>
-              <p className="display font-bold tabular-nums" style={{ color: 'var(--ink)', fontSize: '1.15rem' }}>
-                {formatNaira(listing.rentUsdc)}
-              </p>
-              <p className="text-[11px] tabular-nums" style={{ color: 'var(--muted)' }}>{formatUsdc(listing.rentUsdc)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>Caution fee (refundable)</p>
-              <p className="display font-bold tabular-nums" style={{ color: 'var(--ink)', fontSize: '1.15rem' }}>
-                {formatNaira(listing.depositUsdc)}
-              </p>
-              <p className="text-[11px] tabular-nums" style={{ color: 'var(--muted)' }}>{formatUsdc(listing.depositUsdc)}</p>
-            </div>
-          </div>
-
-          {/* ── Step content ── */}
-          <AnimatePresence mode="wait">
-
-            {/* STEP 0: Book inspection */}
-            {step === 'idle' && (
-              <motion.div
-                key="idle"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={springs.snappy}
-                className="space-y-4"
-              >
-                {/* Warning banner */}
-                <div
-                  className="flex items-start gap-3 px-4 py-3.5 rounded-2xl"
-                  style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)' }}
-                >
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
-                  <p className="text-xs leading-relaxed" style={{ color: 'var(--ink)' }}>
-                    <strong>Inspect before you pay.</strong> You must visit the property and confirm you are satisfied before any payment is released. No exceptions.
-                  </p>
-                </div>
-
-                <div className="space-y-2.5">
-                  {[
-                    { icon: CalendarCheck, title: 'Book a free inspection', desc: 'Contact the landlord directly via WhatsApp. Inspections are free, no commitment.' },
-                    { icon: Eye, title: 'Visit and verify', desc: 'Check the property in person — structure, water, power, neighbourhood.' },
-                    { icon: ShieldCheck, title: 'Pay only if satisfied', desc: 'Rent goes into a smart contract escrow. Released to landlord only after you confirm move-in.' },
-                  ].map(({ icon: Icon, title, desc }) => (
-                    <div key={title} className="flex gap-3 items-start px-3 py-3 rounded-2xl"
-                      style={{ background: 'var(--surface-muted)' }}>
-                      <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ background: 'var(--accent-soft)' }}>
-                        <Icon className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{title}</p>
-                        <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--muted)' }}>{desc}</p>
-                      </div>
+                  {!rebooking && current?.status === 'missed' && (
+                    <Banner tone="warn" icon={AlertTriangle} title={current.missedBy === 'landlord' ? 'The landlord marked the last visit as missed' : 'You marked the last visit as missed'}><p>No problem — book a new time.</p></Banner>
+                  )}
+                  {!rebooking && current?.status === 'cancelled' && <Banner tone="warn" icon={AlertTriangle} title="You cancelled your last visit"><p>Book again whenever you're ready.</p></Banner>}
+                  <div>
+                    <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>{rebooking ? 'Pick a new time' : 'When can you visit?'}</h3>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>The landlord will approve it or suggest another time. Inspections are free.</p>
+                  </div>
+                  <SlotPicker value={slot} onChange={setSlot} />
+                  {!rebooking && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-xs" style={{ color: 'var(--muted)' }}>Your name
+                        <input value={contact.name} onChange={e => setContact(c => ({ ...c, name: e.target.value.slice(0, 60) }))} autoComplete="name" placeholder="e.g. Ada Obi"
+                          className="mt-1 w-full h-11 px-3 rounded-xl text-sm outline-none" style={{ ...card, color: 'var(--ink)' }} />
+                      </label>
+                      <label className="text-xs" style={{ color: 'var(--muted)' }}>Phone (WhatsApp)
+                        <input value={contact.phone} onChange={e => setContact(c => ({ ...c, phone: e.target.value.replace(/[^\d+ ]/g, '').slice(0, 18) }))} inputMode="tel" autoComplete="tel" placeholder="0803 123 4567"
+                          className="mt-1 w-full h-11 px-3 rounded-xl text-sm outline-none" style={{ ...card, color: 'var(--ink)' }} />
+                      </label>
                     </div>
-                  ))}
-                </div>
+                  )}
+                  <input value={note} onChange={e => setNote(e.target.value.slice(0, 300))} placeholder="Note for the landlord (optional), e.g. coming with my sister"
+                    className="w-full h-11 px-3 rounded-xl text-sm outline-none" style={{ ...card, color: 'var(--ink)' }} />
+                  <button onClick={() => { void submitBooking(); }} disabled={busy === 'book'} className={btn} style={primary}>
+                    <Spin on={busy === 'book'} /> {slot ? `Request ${formatSlot(slot)}` : 'Pick a time above'}
+                  </button>
+                  {rebooking && <button onClick={() => setRebooking(false)} className="w-full text-sm py-2" style={{ color: 'var(--muted)' }}>Keep the current time</button>}
+                  {!rebooking && landlordPhone && !current && <button onClick={() => setChatted(false)} className="w-full text-xs py-1" style={{ color: 'var(--muted)' }}>← Chat with the landlord first</button>}
+                </>)}
 
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={bookInspection}
-                  className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{
-                    background: '#1fa855',
-                  }}
-                >
-                  <Phone className="w-4 h-4" />
-                  {landlordPhone ? 'Book inspection on WhatsApp' : 'I have arranged an inspection'}
-                </motion.button>
-                {!landlordPhone && !listing.sample && (
-                  <p className="text-xs text-center" style={{ color: 'var(--muted)' }}>
-                    This landlord hasn't shared a WhatsApp number. Arrange the visit with them, then continue — you only pay after you've seen the property.
-                  </p>
+                {/* 2 — Waiting for the landlord */}
+                {screen === 'waiting' && current && (<>
+                  <Banner tone="good" icon={Clock} title="Waiting for the landlord to approve">
+                    <p>{current.notified === false ? 'They can see your request in Handova.' : 'We\'ve let them know.'} Most landlords reply within a day — we'll update this page when they do.</p>
+                  </Banner>
+                  <WhenWhere i={current} where={listing.address || listing.location} />
+                  <ChatLandlord phone={landlordPhone} text={`Hello, I've requested an inspection on Handova for ${formatSlot(current.slotAt)} at ${listing.address || listing.location}. Please approve it when you can.`} label="Remind the landlord on WhatsApp" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => { setSlot(null); setRebooking(true); }} className={btn} style={secondary}>Change time</button>
+                    <button onClick={() => { void run('cancel', () => ins.act(current.id, 'cancel'), () => 'Visit cancelled.'); }} disabled={busy === 'cancel'} className={btn} style={{ ...secondary, color: 'var(--danger)' }}><Spin on={busy === 'cancel'} /> Cancel</button>
+                  </div>
+                </>)}
+
+                {/* 2 — Landlord suggested another time */}
+                {screen === 'suggested' && current && (<>
+                  <Banner tone="warn" icon={CalendarCheck} title="The landlord suggested another time">{current.landlordNote ? <p>"{current.landlordNote}"</p> : null}</Banner>
+                  <WhenWhere i={current} where={listing.address || listing.location} />
+                  <button onClick={() => { void run('accept', () => ins.act(current.id, 'accept'), () => 'Visit confirmed!'); }} disabled={busy === 'accept'} className={btn} style={primary}>
+                    <Spin on={busy === 'accept'} /> <CheckCircle2 className="w-4 h-4" /> That works for me
+                  </button>
+                  <button onClick={() => { setSlot(null); setRebooking(true); }} className={btn} style={secondary}>Suggest a different time</button>
+                </>)}
+
+                {/* 3 — Visit confirmed, before the time */}
+                {screen === 'upcoming' && current && (<>
+                  <Banner tone="good" icon={CheckCircle2} title="Your visit is confirmed">{current.landlordNote ? <p>Landlord: "{current.landlordNote}"</p> : <p>The landlord expects you.</p>}</Banner>
+                  <WhenWhere i={current} where={listing.address || listing.location} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <a href={calendarLink(`House inspection — ${listing.location}`, current.slotAt, `${listing.address || listing.location}\nBooked on Handova.`)} target="_blank" rel="noreferrer" className={btn} style={secondary}>
+                      <CalendarPlus className="w-4 h-4" /> Add to calendar
+                    </a>
+                    {landlordPhone
+                      ? <a href={waLink(landlordPhone, `Hello, this is ${current.tenantName}. Looking forward to the inspection ${formatSlot(current.slotAt)}.`)} target="_blank" rel="noreferrer" className={btn} style={secondary}><MessageCircle className="w-4 h-4" /> Message</a>
+                      : <button onClick={() => { setSlot(null); setRebooking(true); }} className={btn} style={secondary}>Change time</button>}
+                  </div>
+                  <div className="rounded-2xl p-4" style={card}>
+                    <p className="text-xs font-semibold mb-2" style={{ color: 'var(--ink)' }}>What to check when you visit</p>
+                    <ul className="text-xs space-y-1" style={{ color: 'var(--ink-2)' }}>
+                      {['Water runs in kitchen and bathroom', 'Power, sockets and meter (prepaid?)', 'Leaks, cracks or damp on walls and ceiling', 'Doors, windows and burglary proofs lock', 'Road access and drainage when it rains'].map(t => <li key={t}>• {t}</li>)}
+                    </ul>
+                  </div>
+                  <div className="flex justify-center gap-4 text-sm">
+                    {landlordPhone && <button onClick={() => { setSlot(null); setRebooking(true); }} style={{ color: 'var(--muted)' }}>Change time</button>}
+                    <button onClick={() => { if (window.confirm('Cancel this visit? The landlord will be told.')) void run('cancel', () => ins.act(current.id, 'cancel'), () => 'Visit cancelled.'); }} style={{ color: 'var(--danger)' }}>Cancel visit</button>
+                  </div>
+                </>)}
+
+                {/* 3 — After the time: did it happen? */}
+                {screen === 'outcome' && current && (current.tenantConfirmedAt ? (<>
+                  <Banner tone="good" icon={Clock} title="Thanks — waiting for the landlord to confirm too">
+                    <p>Once they confirm the visit, you can pay. If they don't respond within 24 hours of the visit, you'll be able to continue anyway — your money stays protected in escrow until you move in.</p>
+                  </Banner>
+                  <ChatLandlord phone={landlordPhone} text={`Hello, thanks for showing me the property. Please confirm the inspection on Handova so I can proceed.`} label="Ask the landlord to confirm" />
+                </>) : (<>
+                  <div>
+                    <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Did the inspection happen?</h3>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>{formatSlot(current.slotAt)} · {listing.location}</p>
+                  </div>
+                  <button onClick={() => { void run('happened', () => ins.act(current.id, 'happened'), i => i.canPay ? 'Both of you confirmed. You can now review and pay.' : 'Thanks! Waiting for the landlord to confirm.'); }} disabled={!!busy} className={btn} style={primary}>
+                    <Spin on={busy === 'happened'} /> <CheckCircle2 className="w-4 h-4" /> Yes, I inspected it
+                  </button>
+                  <button onClick={() => { void run('missed', () => ins.act(current.id, 'missed'), () => 'Noted. You can book a new time.'); }} disabled={!!busy} className={btn} style={secondary}>
+                    <Spin on={busy === 'missed'} /> No, it didn't happen
+                  </button>
+                  <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>Didn't like the place? Just close this — you don't have to rent it.</p>
+                </>))}
+
+                {/* 4 — Review & pay */}
+                {screen === 'pay' && (<>
+                  <div>
+                    <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Review and pay</h3>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Your money goes into escrow, not to the landlord. They're paid only after you confirm you've moved in.</p>
+                  </div>
+                  <div className="rounded-2xl overflow-hidden" style={card}>
+                    {[
+                      ['Rent (1 year)', formatNaira(listing.rentUsdc)],
+                      ['Caution fee (refundable)', formatNaira(listing.depositUsdc)],
+                      ['Agent fee', '₦0'],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex justify-between px-4 py-2.5 text-sm border-b" style={{ borderColor: 'var(--border)' }}><span style={{ color: 'var(--muted)' }}>{k}</span><span className="tabular-nums" style={{ color: 'var(--ink)' }}>{v}</span></div>
+                    ))}
+                    <div className="flex justify-between px-4 py-3 text-sm font-bold"><span style={{ color: 'var(--ink)' }}>You pay into escrow</span><span className="tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(total)} <span className="font-normal text-xs" style={{ color: 'var(--muted)' }}>({formatUsdc(total)})</span></span></div>
+                  </div>
+                  <div className="space-y-2">
+                    {[
+                      'I inspected this home and I\'m happy with it',
+                      `I agree to ${formatNaira(listing.rentUsdc)} a year plus a ${formatNaira(listing.depositUsdc)} refundable caution fee`,
+                      'I\'ll tap "I\'ve moved in" only after I get the keys — that\'s when the landlord is paid',
+                    ].map((t, i) => (
+                      <label key={t} className="flex gap-3 items-start p-3 rounded-xl cursor-pointer" style={card}>
+                        <input type="checkbox" checked={checks[i]} onChange={() => setChecks(c => c.map((v, j) => (j === i ? !v : v)))} className="mt-0.5 w-4 h-4 accent-[var(--accent)]" />
+                        <span className="text-sm" style={{ color: 'var(--ink)' }}>{t}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <button onClick={() => { void pay(); }} disabled={busy === 'pay' || checks.some(c => !c)} className={btn} style={primary}>
+                    {busy === 'pay' ? <><Loader2 className="w-4 h-4 animate-spin" /> Paying into escrow…</> : <><ShieldCheck className="w-4 h-4" /> Pay {formatNaira(total)} into escrow</>}
+                  </button>
+                  {checks.some(c => !c) && <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>Tick all three to continue.</p>}
+                </>)}
+
+                {/* Done */}
+                {screen === 'paid' && (
+                  <div className="flex flex-col items-center text-center py-4 space-y-4">
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 320, damping: 18 }}
+                      className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: 'var(--success)' }}>
+                      <CheckCircle2 className="w-10 h-10 text-white" />
+                    </motion.div>
+                    <div>
+                      <h3 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Your rent is safe in escrow</h3>
+                      <p className="text-sm mt-1 max-w-xs" style={{ color: 'var(--muted)' }}>Next: collect your keys, then open My Leases and tap "I've moved in". That's when the landlord gets paid.</p>
+                    </div>
+                    <button onClick={onClose} className="px-8 h-12 rounded-2xl font-semibold" style={primary}>Done</button>
+                  </div>
                 )}
               </motion.div>
-            )}
-
-            {/* STEP 1: Booked — confirm visit */}
-            {step === 'booked' && (
-              <motion.div
-                key="booked"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={springs.snappy}
-                className="space-y-4"
-              >
-                <div
-                  className="flex items-start gap-3 px-4 py-3.5 rounded-2xl"
-                  style={{ background: 'var(--accent-soft)', border: '1px solid rgba(26,128,71,0.2)' }}
-                >
-                  <CheckCircle2 className="w-5 h-5 shrink-0" style={{ color: 'var(--accent)' }} />
-                  <div>
-                    <p className="text-sm font-bold" style={{ color: 'var(--accent)' }}>Inspection request sent!</p>
-                    <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--ink)' }}>
-                      The landlord has been contacted via WhatsApp. Once you have visited the property and you are satisfied, come back and confirm your visit to unlock payment.
-                    </p>
-                  </div>
-                </div>
-
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={confirmVisit}
-                  className="w-full py-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2"
-                  style={{
-                    background: 'var(--accent)',
-                    color: 'white',
-                    boxShadow: 'none',
-                  }}
-                >
-                  <Eye className="w-4 h-4" />
-                  I Have Visited and I'm Satisfied
-                  <ArrowRight className="w-4 h-4" />
-                </motion.button>
-
-                <p className="text-center text-xs" style={{ color: 'var(--subtle)' }}>
-                  Only confirm after physically visiting the property.
-                </p>
-              </motion.div>
-            )}
-
-            {/* STEP 2: Visited — pay */}
-            {step === 'visited' && (
-              <motion.div
-                key="visited"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={springs.snappy}
-                className="space-y-4"
-              >
-                <div
-                  className="rounded-3xl p-4 space-y-3"
-                  style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}
-                >
-                  <p className="text-sm font-bold" style={{ color: 'var(--ink)' }}>Rent goes into smart contract escrow</p>
-                  {[
-                    `Rent: ${formatNaira(listing.rentUsdc)} (${formatUsdc(listing.rentUsdc)})`,
-                    `Security deposit: ${formatNaira(listing.depositUsdc)} — refundable at end of tenancy`,
-                    'Released to landlord only after you confirm move-in',
-                    'Deposit returned to you when tenancy ends',
-                    'Zero agent fee. Zero hidden charges.',
-                  ].map(item => (
-                    <div key={item} className="flex items-start gap-2.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
-                      <p className="text-xs" style={{ color: 'var(--muted)' }}>{item}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div
-                  className="flex items-center justify-between px-4 py-3 rounded-2xl font-semibold"
-                  style={{ background: 'var(--accent-soft)' }}
-                >
-                  <span className="text-sm" style={{ color: 'var(--accent)' }}>Total you pay</span>
-                  <span className="display tabular-nums" style={{ color: 'var(--accent)', fontSize: '1.1rem' }}>
-                    {formatNaira((listing.rentUsdc + listing.depositUsdc))} ({formatUsdc(listing.rentUsdc + listing.depositUsdc)})
-                  </span>
-                </div>
-
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => { void handlePay(); }}
-                  disabled={paying}
-                  className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{
-                    background: paying ? 'var(--subtle)' : `${listing.color}`,
-                    boxShadow: paying ? 'none' : '0 4px 20px rgba(0,0,0,0.18)',
-                  }}
-                >
-                  {paying
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Depositing to escrow…</>
-                    : <><ShieldCheck className="w-4 h-4" /> Pay Rent to Escrow</>
-                  }
-                </motion.button>
-              </motion.div>
-            )}
-
-            {/* STEP 3: Paid */}
-            {step === 'paid' && (
-              <motion.div
-                key="paid"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={springs.snappy}
-                className="flex flex-col items-center text-center py-4 space-y-4"
-              >
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 320, damping: 18, delay: 0.1 }}
-                  className="w-20 h-20 rounded-full flex items-center justify-center"
-                  style={{
-                    background: 'var(--success)',
-                    boxShadow: '0 12px 40px rgba(26,128,71,0.3)',
-                  }}
-                >
-                  <CheckCircle2 className="w-10 h-10 text-white" />
-                </motion.div>
-                <div>
-                  <h3 className="display text-xl font-bold" style={{ color: 'var(--ink)' }}>
-                    Rent secured in escrow!
-                  </h3>
-                  <p className="text-sm mt-1 max-w-xs" style={{ color: 'var(--muted)' }}>
-                    Visit the property, collect your keys, and confirm move-in in the app. Landlord gets paid — you get your NFT lease certificate.
-                  </p>
-                </div>
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={onClose}
-                  className="px-8 py-3.5 rounded-2xl font-semibold text-white"
-                  style={{
-                    background: 'var(--accent)',
-                    boxShadow: 'none',
-                  }}
-                >
-                  Done
-                </motion.button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </AnimatePresence>
+          )}
+          {ins.isError && !listing.sample && !own && (
+            <p className="text-xs text-center" style={{ color: 'var(--danger)' }}>{errorMessage(ins.error)}</p>
+          )}
+          {current && !paid && landlordPhone === '' && screen !== 'pay' && (
+            <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>This landlord hasn't shared a WhatsApp number — they'll respond in Handova.</p>
+          )}
+          {current && ['requested', 'rescheduled', 'approved'].includes(current.status) && current.tenantPhone && (
+            <p className="text-[11px] text-center" style={{ color: 'var(--subtle)' }}>The landlord can reach you on {prettyPhone(current.tenantPhone)}.</p>
+          )}
         </div>
       </motion.div>
     </motion.div>
