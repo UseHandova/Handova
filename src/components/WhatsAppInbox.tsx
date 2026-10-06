@@ -18,6 +18,7 @@ import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
 import { bundlerClient } from '@/lib/wallet';
 import { useRefreshChain } from '@/lib/chain';
+import { waCodeFromUrl } from '@/lib/url';
 
 interface Draft {
   code: string;
@@ -37,23 +38,8 @@ interface Props {
 const BOT_NUMBER = ((import.meta.env.VITE_WHATSAPP_BOT_NUMBER as string | undefined) ?? '').replace(/\D/g, '');
 const JOIN_CODE = (import.meta.env.VITE_WHATSAPP_JOIN_CODE as string | undefined) ?? '';
 
-/** Read a claim code from ?wa=123456 (the link the bot sends), then drop it from the URL. */
-function takeCodeFromUrl(): string {
-  try {
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get('wa') ?? '';
-    if (code) {
-      url.searchParams.delete('wa');
-      window.history.replaceState(null, '', url.toString());
-    }
-    return /^\d{6}$/.test(code) ? code : '';
-  } catch {
-    return '';
-  }
-}
-
 export default function WhatsAppInbox({ account }: Props) {
-  const [initialCode] = useState(takeCodeFromUrl);
+  const [initialCode] = useState(waCodeFromUrl);
   const [code, setCode] = useState(initialCode);
   // The code being looked up; set on "Find" (or straight away when arriving via the bot's link).
   const [submitted, setSubmitted] = useState(initialCode);
