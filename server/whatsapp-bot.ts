@@ -1,0 +1,297 @@
+/**
+ * RentFlow WhatsApp Bot Server
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Receives WhatsApp messages from Twilio (text, images, voice notes).
+ * Uses OpenAI to parse a listing from a landlord's message/voice note.
+ * Returns the parsed listing as JSON + a Twilio TwiML reply.
+ *
+ * ENV vars needed:
+ *   TWILIO_ACCOUNT_SID       — from console.twilio.com
+ *   TWILIO_AUTH_TOKEN        — from console.twilio.com
+ *   TWILIO_WHATSAPP_NUMBER   — e.g. whatsapp:+14155238886 (Twilio Sandbox)
+ *   OPENAI_API_KEY           — from platform.openai.com
+ *   BOT_SECRET               — any random string, used to auth /api/bot/* calls
+ *
+ * Twilio Webhook URL to set in Twilio Sandbox:
+ *   https://<your-preview-hostname>/api/whatsapp/incoming
+ *   (During dev: use ngrok or a similar tunnel pointed at port 3001)
+ */
+
+import express from 'express';
+import cors from 'cors';
+import OpenAI from 'openai';
+import twilio from 'twilio';
+
+const app = express();
+const PORT = 3001;
+
+// ── Middleware ───────────────────────────────────────────────────────────────
+app.use(cors({ origin: '*' }));
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
+
+// ── OpenAI client ────────────────────────────────────────────────────────────
+// Created lazily so the server still boots (and serves the admin API) without a key.
+let openaiClient: OpenAI | null = null;
+function openai(): OpenAI {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not set');
+  openaiClient ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return openaiClient;
+}
+
+// ── Twilio client ────────────────────────────────────────────────────────────
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID ?? '',
+  process.env.TWILIO_AUTH_TOKEN ?? '',
+);
+
+// ── In-memory pending listings queue ─────────────────────────────────────────
+// In production, replace with a real database.
+interface PendingListing {
+  id: string;
+  from: string;          // WhatsApp phone number
+  location: string;
+  rooms: number;
+  rentNgn: number;
+  depositNgn: number;
+  description: string;
+  amenities: string[];
+  mediaUrls: string[];   // Twilio media URLs
+  rawMessage: string;
+  parsedAt: number;
+  status: 'pending' | 'published' | 'rejected';
+}
+
+const pendingListings: PendingListing[] = [];
+
+// ── System prompt for listing extraction ─────────────────────────────────────
+const SYSTEM_PROMPT = `You are RentFlow AI assistant helping Lagos landlords list their properties.
+Extract property listing details from the landlord's message (which may be in English, Yoruba, Pidgin, Igbo, or Hausa).
+
+Return ONLY a valid JSON object with these fields:
+{
+  "location": "area name in Lagos (string, e.g. Lekki Phase 1, Yaba, Victoria Island)",
+  "rooms": number of bedrooms (integer 1-10),
+  "rentNgn": annual rent in Nigerian Naira (integer),
+  "depositNgn": security deposit in Nigerian Naira (integer, if not stated use same as rentNgn),
+  "description": "brief property description in English (1-2 sentences)",
+  "amenities": ["list", "of", "amenities"] from: Generator, Borehole, Security, Parking, Tiled, Fenced, CCTV, Pop Ceiling,
+  "confidence": "high" | "medium" | "low"
+}
+
+If rent or location cannot be determined, set confidence to "low".
+Common Nigerian rent abbreviations: 500k = 500,000, 1.2m = 1,200,000, 800k = 800,000.
+If message is in Nigerian Pidgin/Yoruba/Igbo/Hausa, translate and extract accordingly.`;
+
+// ── Parse listing from text ───────────────────────────────────────────────────
+async function parseListingFromText(text: string): Promise<Omit<PendingListing, 'id' | 'from' | 'mediaUrls' | 'rawMessage' | 'parsedAt' | 'status'>> {
+  const completion = await openai().chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: text },
+    ],
+    response_format: { type: 'json_object' },
+    max_tokens: 400,
+  });
+
+  const raw = completion.choices[0]?.message?.content ?? '{}';
+  const parsed = JSON.parse(raw) as {
+    location?: string;
+    rooms?: number;
+    rentNgn?: number;
+    depositNgn?: number;
+    description?: string;
+    amenities?: string[];
+  };
+
+  return {
+    location: parsed.location ?? 'Lagos (location not specified)',
+    rooms: parsed.rooms ?? 1,
+    rentNgn: parsed.rentNgn ?? 0,
+    depositNgn: parsed.depositNgn ?? (parsed.rentNgn ?? 0),
+    description: parsed.description ?? text.slice(0, 200),
+    amenities: parsed.amenities ?? [],
+  };
+}
+
+// ── Transcribe voice note via Whisper ─────────────────────────────────────────
+async function transcribeAudio(mediaUrl: string, twilioSid: string, twilioToken: string): Promise<string> {
+  // Download from Twilio (requires Basic auth)
+  const auth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
+  const resp = await fetch(mediaUrl, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch audio: ${resp.status}`);
+
+  const arrayBuf = await resp.arrayBuffer();
+  const blob = new Blob([arrayBuf], { type: 'audio/ogg' });
+  const file = new File([blob], 'voice.ogg', { type: 'audio/ogg' });
+
+  const transcription = await openai().audio.transcriptions.create({
+    file,
+    model: 'whisper-1',
+    language: 'en', // Whisper auto-detects Nigerian languages well
+  });
+
+  return transcription.text;
+}
+
+// ── Build TwiML reply ─────────────────────────────────────────────────────────
+function twimlReply(message: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Message>${message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Message>
+</Response>`;
+}
+
+// ── POST /api/whatsapp/incoming — Twilio webhook ──────────────────────────────
+app.post('/api/whatsapp/incoming', async (req, res) => {
+  try {
+    // Validate Twilio signature in production
+    const body = req.body as Record<string, string>;
+    const from: string = body.From ?? '';
+    const msgBody: string = body.Body ?? '';
+    const numMedia = parseInt(body.NumMedia ?? '0', 10);
+
+    const mediaUrls: string[] = [];
+    const mediaTypes: string[] = [];
+    for (let i = 0; i < numMedia; i++) {
+      mediaUrls.push(body[`MediaUrl${i}`] ?? '');
+      mediaTypes.push(body[`MediaContentType${i}`] ?? '');
+    }
+
+    // Build text to parse
+    let textToParse = msgBody;
+
+    // If a voice note is attached, transcribe it first
+    const voiceIndex = mediaTypes.findIndex(t => t.startsWith('audio/'));
+    if (voiceIndex !== -1 && process.env.OPENAI_API_KEY && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      try {
+        const transcript = await transcribeAudio(
+          mediaUrls[voiceIndex],
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN,
+        );
+        textToParse = `${msgBody} [Voice note transcript: ${transcript}]`;
+      } catch {
+        // Fall back to text-only parsing
+      }
+    }
+
+    // If no meaningful text, send a prompt
+    if (!textToParse.trim() || textToParse.trim().length < 10) {
+      res.set('Content-Type', 'text/xml').send(
+        twimlReply(
+          'Welcome to RentFlow! Send me details about your property to list it.\n\nExample:\n"2 bedroom flat in Lekki Phase 1, ₦800k per year, generator and security"',
+        ),
+      );
+      return;
+    }
+
+    // Parse listing with AI
+    let parsed;
+    try {
+      parsed = await parseListingFromText(textToParse);
+    } catch {
+      res.set('Content-Type', 'text/xml').send(
+        twimlReply('Sorry, I could not understand the property details. Please try again with location, number of rooms, and rent amount.'),
+      );
+      return;
+    }
+
+    // Store in pending queue
+    const listing: PendingListing = {
+      id: Math.random().toString(36).slice(2),
+      from,
+      ...parsed,
+      mediaUrls: mediaUrls.filter((_, i) => mediaTypes[i]?.startsWith('image/')),
+      rawMessage: msgBody,
+      parsedAt: Date.now(),
+      status: 'pending',
+    };
+    pendingListings.unshift(listing);
+
+    // Send confirmation back to landlord
+    const rentFormatted = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(parsed.rentNgn);
+    const replyMsg = parsed.rentNgn > 0
+      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n\nYour listing is pending review. Open the RentFlow app to confirm and publish it onchain.`
+      : `I received your message but couldn't find the rent amount. Please reply with: location, rooms, and rent. E.g. "2 bed Yaba 600k per year"`;
+
+    res.set('Content-Type', 'text/xml').send(twimlReply(replyMsg));
+  } catch (err) {
+    console.error('[WhatsApp Bot] Error:', err);
+    res.set('Content-Type', 'text/xml').send(
+      twimlReply('Something went wrong. Please try again.'),
+    );
+  }
+});
+
+// ── GET /api/bot/pending — fetch pending listings (app calls this) ─────────────
+app.get('/api/bot/pending', (req, res) => {
+  const secret = req.headers['x-bot-secret'];
+  if (secret !== process.env.BOT_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  res.json(pendingListings.filter(l => l.status === 'pending'));
+});
+
+// ── POST /api/bot/approve — mark a listing as published ───────────────────────
+app.post('/api/bot/approve', (req, res) => {
+  const secret = req.headers['x-bot-secret'];
+  if (secret !== process.env.BOT_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  const { id } = req.body as { id?: string };
+  const listing = pendingListings.find(l => l.id === id);
+  if (!listing) { res.status(404).json({ error: 'Not found' }); return; }
+  listing.status = 'published';
+
+  // Optionally notify the landlord via WhatsApp
+  if (process.env.TWILIO_WHATSAPP_NUMBER && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    twilioClient.messages.create({
+      from: process.env.TWILIO_WHATSAPP_NUMBER,
+      to: listing.from,
+      body: `🎉 Your property in ${listing.location} is now LIVE on RentFlow! Tenants can find it directly — no agent fee.`,
+    }).catch(() => { /* non-critical */ });
+  }
+
+  res.json({ ok: true, listing });
+});
+
+// ── POST /api/bot/reject ──────────────────────────────────────────────────────
+app.post('/api/bot/reject', (req, res) => {
+  const secret = req.headers['x-bot-secret'];
+  if (secret !== process.env.BOT_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  const { id } = req.body as { id?: string };
+  const listing = pendingListings.find(l => l.id === id);
+  if (!listing) { res.status(404).json({ error: 'Not found' }); return; }
+  listing.status = 'rejected';
+  res.json({ ok: true });
+});
+
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    env: {
+      twilio: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+      openai: !!process.env.OPENAI_API_KEY,
+      botSecret: !!process.env.BOT_SECRET,
+    },
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`[RentFlow Bot] Server running on port ${PORT}`);
+  console.log(`[RentFlow Bot] Webhook URL: http://localhost:${PORT}/api/whatsapp/incoming`);
+  if (!process.env.OPENAI_API_KEY) console.warn('[RentFlow Bot] WARNING: OPENAI_API_KEY not set');
+  if (!process.env.TWILIO_ACCOUNT_SID) console.warn('[RentFlow Bot] WARNING: TWILIO_ACCOUNT_SID not set');
+});
+
+export default app;
