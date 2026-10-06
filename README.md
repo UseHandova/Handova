@@ -46,7 +46,7 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 ## Features
 
 - **Passkey login.** Circle Modular Wallets smart accounts with gasless transactions via paymaster. No seed phrases.
-- **WhatsApp listing bot.** A landlord sends a text or voice note, AI turns it into a listing, and an admin approves it onchain.
+- **WhatsApp listing bot.** A landlord sends a text or voice note, AI turns it into a listing (via Groq's free tier or OpenAI), and an admin approves it onchain.
 - **Prices in Naira.** Everything is shown in ₦, and USDC runs underneath.
 - **Five languages:** English, Yorùbá, Naija Pidgin, Igbo, Hausa.
 - **Lease certificate NFT**, minted on move-in.
@@ -59,7 +59,7 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 | Frontend | React 18, Vite, TypeScript, Tailwind, Framer Motion |
 | Web3 | viem v2, wagmi v2, Circle Modular Wallets (passkeys + bundler + paymaster) |
 | Contracts | Solidity 0.8.28, Foundry, OpenZeppelin 5 |
-| Bot server | Express, Twilio WhatsApp, OpenAI (listing parsing + voice transcription) |
+| Bot server | Express, Twilio WhatsApp, Groq or OpenAI (Llama / GPT listing parsing + Whisper voice transcription) |
 | Chain | Arc Testnet (chain id `5042002`), USDC `0x3600000000000000000000000000000000000000` |
 
 ## Deployed contracts (Arc Testnet)
@@ -103,7 +103,8 @@ bun run contracts:test
 | `VITE_ESCROW_ADDRESS` / `VITE_NFT_ADDRESS` | Contract calls | Table above |
 | `BOT_SECRET` / `VITE_BOT_SECRET` | Admin approval of WhatsApp listings | Any random string (the two must match) |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_NUMBER` | WhatsApp bot | [Twilio Console](https://console.twilio.com) |
-| `OPENAI_API_KEY` | Parsing listings & voice notes | [OpenAI Platform](https://platform.openai.com) |
+| `GROQ_API_KEY` | Parsing listings & voice notes (free tier) | [Groq Console](https://console.groq.com/keys) |
+| `OPENAI_API_KEY` | Fallback when `GROQ_API_KEY` is empty | [OpenAI Platform](https://platform.openai.com) |
 
 For WhatsApp, point your Twilio sandbox webhook at `https://<your-host>/api/whatsapp/incoming` (use ngrok in development).
 
