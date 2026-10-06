@@ -4,6 +4,8 @@
  */
 
 import { useMemo, useState } from 'react';
+import { TenantVisits } from '@/components/InspectionRequests';
+import { navigate } from '@/lib/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Clock, Download, FileText, Loader2, ShieldCheck, Star, Wrench } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
@@ -113,6 +115,8 @@ export default function MyLeases({ account, address }: Props) {
       <p className="text-sm mt-1 mb-6" style={{ color: 'var(--muted)' }}>
         {u('leases_sub')}
       </p>
+
+      <TenantVisits account={account} onOpen={id => navigate(`/tenant?visit=${id}`)} />
 
       {escrows.length === 0 ? (
         <div className="rounded-2xl p-10 flex flex-col items-center text-center" style={{ border: '1px dashed var(--border-strong)' }}>

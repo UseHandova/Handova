@@ -7,7 +7,9 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, CheckCircle2, Key, ShieldCheck, Zap, AlertTriangle, Wallet, Clock } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useLang } from '@/lib/LangContext';
+import { OUTCOME_OPENS_MS, formatSlot, type Inspection } from '@/lib/inspections';
 import { EscrowStatus } from '@/lib/contracts';
 import { formatNaira } from '@/lib/naira';
 import {
@@ -89,6 +91,27 @@ function landlordNotice(e: ChainEscrow, now: number): Notification | null {
   }
 }
 
+/** Inspection updates (from the cached /api/inspections list, which the dashboard and listings keep fresh). */
+function inspectionNotice(i: Inspection, now: number): Notification | null {
+  const id = (s: string) => `i-${i.id}-${s}-${i.slotAt}`;
+  const when = formatSlot(i.slotAt, now);
+  const outcomeTime = now >= i.slotAt - OUTCOME_OPENS_MS;
+  if (i.role === 'landlord') {
+    if (i.status === 'requested') return { id: id('req'), type: 'review', title: 'Inspection request', body: `${i.tenantName} wants to visit ${i.place} ${when}. Approve it or suggest another time on your dashboard.`, createdAt: i.updatedAt };
+    if (i.status === 'approved' && outcomeTime && !i.landlordConfirmedAt) return { id: id('outcome'), type: 'keys', title: 'Did the visit happen?', body: `Confirm ${i.tenantName}'s inspection at ${i.place} so they can pay into escrow.`, createdAt: i.slotAt };
+    if (i.status === 'approved' && !outcomeTime) return { id: id('accepted'), type: 'escrow', title: 'Visit confirmed', body: `${i.tenantName} is coming to ${i.place} ${when}.`, createdAt: i.updatedAt };
+    if (i.status === 'cancelled') return { id: id('cancel'), type: 'dispute', title: 'Visit cancelled', body: `${i.tenantName} cancelled the visit to ${i.place} (${when}).`, createdAt: i.updatedAt };
+    return null;
+  }
+  if (i.canPay) return { id: id('pay'), type: 'done', title: 'Ready to pay', body: `Your inspection at ${i.place} is confirmed. Review the details and pay into escrow when you're ready.`, createdAt: i.updatedAt };
+  if (i.status === 'rescheduled') return { id: id('resch'), type: 'review', title: 'New time suggested', body: `The landlord at ${i.place} suggested ${when}. Accept it or pick another time.`, createdAt: i.updatedAt };
+  if (i.status === 'declined') return { id: id('declined'), type: 'dispute', title: 'Visit declined', body: `The landlord at ${i.place} couldn't do ${when}${i.landlordNote ? `: "${i.landlordNote}"` : '.'} You can pick another time.`, createdAt: i.updatedAt };
+  if (i.status === 'approved' && outcomeTime && !i.tenantConfirmedAt) return { id: id('outcome'), type: 'keys', title: 'How did the visit go?', body: `Tell us if your inspection at ${i.place} happened so you can move on to paying.`, createdAt: i.slotAt };
+  if (i.status === 'approved' && !outcomeTime) return { id: id('approved'), type: 'escrow', title: 'Visit confirmed', body: `Your inspection at ${i.place} is ${when}.`, createdAt: i.updatedAt };
+  if (i.status === 'missed' && i.missedBy === 'landlord') return { id: id('missed'), type: 'dispute', title: 'Visit marked as missed', body: `The landlord says the visit to ${i.place} didn't happen. You can book a new time.`, createdAt: i.updatedAt };
+  return null;
+}
+
 function timeAgo(ts: number, now: number): string {
   const m = Math.floor((now - ts) / 60000);
   if (m < 1) return 'just now';
@@ -106,6 +129,8 @@ export default function NotificationCenter({ address }: { address: string }) {
   const chain = useChainState();
   const pending = usePendingWithdrawal(address).data ?? 0;
   const now = useNow();
+  // Read-only view of the inspections cache; whichever screen signed in keeps it fresh.
+  const visits = useQuery<Inspection[]>({ queryKey: ['inspections', address.toLowerCase()], enabled: false }).data;
 
   const notifs = useMemo(() => {
     const list: Notification[] = [];
@@ -115,11 +140,12 @@ export default function NotificationCenter({ address }: { address: string }) {
         : null;
       if (n) list.push(n);
     }
+    for (const i of visits ?? []) { const n = inspectionNotice(i, now); if (n) list.push(n); }
     if (pending > 0) {
       list.push({ id: `money-${pending}`, type: 'money', title: 'Money to withdraw', body: `You have ${formatNaira(pending)} ready. Tap Withdraw at the top to move it to your wallet.`, createdAt: now });
     }
     return list.filter(n => !hidden.has(n.id)).sort((a, b) => b.createdAt - a.createdAt);
-  }, [chain.data, address, pending, hidden, now]);
+  }, [chain.data, address, pending, hidden, now, visits]);
 
   const unread = notifs.filter(n => !seen.has(n.id)).length;
 

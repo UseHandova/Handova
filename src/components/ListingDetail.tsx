@@ -20,6 +20,8 @@ interface Props {
   onToggleSave: () => void;
   onClose: () => void;
   onRent: () => void;
+  /** Overrides the main button text when the tenant already has a visit in progress. */
+  rentLabel?: string;
   onMap: () => void;
   onShare: () => void;
   onReviews: () => void;
@@ -29,7 +31,7 @@ interface Props {
 const BEDROOM_TYPES = new Set(['single_room', 'self_contain', 'mini_flat', 'two_bed', 'three_bed']);
 
 
-export default function ListingDetail({ listing, saved, onToggleSave, onClose, onRent, onMap, onShare, onReviews }: Props) {
+export default function ListingDetail({ listing, saved, onToggleSave, onClose, onRent, rentLabel, onMap, onShare, onReviews }: Props) {
   const { t } = useLang();
   const u = useUi();
   const [index, setIndex] = useState(0);
@@ -225,7 +227,7 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
           <button onClick={onRent}
             className="flex-1 sm:flex-none sm:px-8 py-3.5 rounded-xl font-semibold text-white text-sm"
             style={{ background: 'var(--accent)' }}>
-            {u('inspect_rent')}
+            {rentLabel ?? u('inspect_rent')}
           </button>
         </div>
       </motion.div>
