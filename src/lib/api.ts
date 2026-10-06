@@ -22,10 +22,18 @@ async function signIn(account: SmartAccount): Promise<string> {
   if (!ch.ok) throw new Error('Could not reach Handova. Check your connection.');
   const { nonce, message } = await ch.json() as { nonce: string; message: string };
   const signature = await account.signMessage({ message });
-  const res = await fetch('/api/auth/session', {
+  // The server may briefly fail to reach the blockchain (503): resend the same signature — no new prompt.
+  let res = await fetch('/api/auth/session', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ address: account.address, nonce, signature }),
   });
+  for (let attempt = 1; attempt < 3 && res.status === 503; attempt++) {
+    await new Promise(r => setTimeout(r, 1500 * attempt));
+    res = await fetch('/api/auth/session', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: account.address, nonce, signature }),
+    });
+  }
   const body = await res.json().catch(() => ({})) as { ok?: boolean; token?: string; expiresAt?: number; error?: string };
   if (!res.ok || !body.token) throw new Error(body.error ?? 'Sign-in failed. Please try again.');
   try { localStorage.setItem(key(account.address), JSON.stringify({ token: body.token, expiresAt: body.expiresAt })); } catch { /* storage unavailable */ }

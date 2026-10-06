@@ -4,10 +4,10 @@
  * Read / dismissed ids are remembered per browser.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, CheckCircle2, Key, ShieldCheck, Zap, AlertTriangle, Wallet, Clock } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useLang } from '@/lib/LangContext';
 import { OUTCOME_OPENS_MS, formatSlot, type Inspection } from '@/lib/inspections';
 import { EscrowStatus } from '@/lib/contracts';
@@ -112,6 +112,17 @@ function inspectionNotice(i: Inspection, now: number): Notification | null {
   return null;
 }
 
+/**
+ * Watch a query's cached data without becoming one of its observers. (An observer without a queryFn
+ * would make the owner's scheduled refetches fail.)
+ */
+function useCachedData<T>(key: readonly unknown[]): T | undefined {
+  const qc = useQueryClient();
+  const hash = JSON.stringify(key);
+  const subscribe = useCallback((onChange: () => void) => qc.getQueryCache().subscribe(e => { if (e.query.queryHash === hash) onChange(); }), [qc, hash]);
+  return useSyncExternalStore(subscribe, () => qc.getQueryData<T>(key));
+}
+
 function timeAgo(ts: number, now: number): string {
   const m = Math.floor((now - ts) / 60000);
   if (m < 1) return 'just now';
@@ -130,7 +141,7 @@ export default function NotificationCenter({ address }: { address: string }) {
   const pending = usePendingWithdrawal(address).data ?? 0;
   const now = useNow();
   // Read-only view of the inspections cache; whichever screen signed in keeps it fresh.
-  const visits = useQuery<Inspection[]>({ queryKey: ['inspections', address.toLowerCase()], enabled: false }).data;
+  const visits = useCachedData<Inspection[]>(['inspections', address.toLowerCase()]);
 
   const notifs = useMemo(() => {
     const list: Notification[] = [];
