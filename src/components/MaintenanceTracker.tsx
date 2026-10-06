@@ -134,7 +134,7 @@ export default function MaintenanceTracker({ account, role, homes = [], labels =
           {list.isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
           ) : list.isError ? (
-            <p className="text-sm text-center py-6" style={{ color: 'var(--danger)' }}>{(list.error as Error).message}</p>
+            <p className="text-sm text-center py-6" style={{ color: 'var(--danger)' }}>{(list.error).message}</p>
           ) : mine.length === 0 ? (
             <p className="text-sm text-center py-6" style={{ color: 'var(--muted)' }}>
               {role === 'tenant' ? 'No repair requests yet.' : 'No repair requests from your tenants.'}

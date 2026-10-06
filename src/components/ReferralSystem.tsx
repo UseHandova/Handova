@@ -81,7 +81,7 @@ export default function ReferralSystem({ account, onClose }: Props) {
           {me.isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
           ) : me.isError ? (
-            <p className="text-sm text-center py-6" style={{ color: 'var(--danger)' }}>{(me.error as Error).message}</p>
+            <p className="text-sm text-center py-6" style={{ color: 'var(--danger)' }}>{(me.error).message}</p>
           ) : me.data && (
             <>
               <div className="p-4 rounded-2xl text-center" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
