@@ -240,13 +240,23 @@ export default function LandlordDashboard({ account }: Props) {
   const rentUsdc = nairaToUsdc(parseFloat(form.rentNgn) || 0);
   const depositUsdc = nairaToUsdc(parseFloat(form.depositNgn) || 0);
   const locationConfirmed = geoStatus === 'valid' || pin !== null;
-  const isValid =
-    form.address.trim().length > 5 &&
-    locationConfirmed &&
-    form.location.trim().length > 0 &&
-    form.description.trim().length > 0 &&
-    parseFloat(form.rentNgn) > 0 &&
-    parseFloat(form.depositNgn) > 0;
+  // Every required field with a plain-language message, in the order they appear on the form.
+  const problems: { field: string; message: string }[] = [
+    form.address.trim().length <= 5 && { field: 'address', message: 'Add the full street address.' },
+    form.address.trim().length > 5 && !locationConfirmed && { field: 'address', message: 'Confirm the address on the map — tap "Drop a Pin", or check the spelling so we can find it.' },
+    !form.location.trim() && { field: 'location', message: 'Add the neighbourhood or area, e.g. Yaba.' },
+    !form.description.trim() && { field: 'description', message: 'Add a short description of the property.' },
+    !(parseFloat(form.rentNgn) > 0) && { field: 'rent', message: 'Enter the annual rent.' },
+    !(parseFloat(form.depositNgn) > 0) && { field: 'deposit', message: 'Enter the caution fee.' },
+  ].filter((p): p is { field: string; message: string } => !!p);
+  const isValid = problems.length === 0;
+  const [showErrors, setShowErrors] = useState(false);
+  const fieldError = (field: string) => showErrors ? problems.find(p => p.field === field)?.message : undefined;
+  const errorText = (field: string) => fieldError(field) && (
+    <p className="text-xs mt-1.5 flex items-center gap-1" style={{ color: 'var(--danger)' }} role="alert">
+      <AlertCircle className="w-3 h-3 shrink-0" /> {fieldError(field)}
+    </p>
+  );
 
   async function checkGeo() {
     if (form.address.trim().length < 5) return;
@@ -294,7 +304,12 @@ export default function LandlordDashboard({ account }: Props) {
   }
 
   async function handleSubmit() {
-    if (!isValid) return;
+    if (!isValid) {
+      setShowErrors(true);
+      toast.error(problems.length === 1 ? problems[0].message : `Please fix ${problems.length} things: ${problems.map(p => p.message.replace(/\.$/, '')).join('; ')}.`);
+      document.getElementById(`field-${problems[0].field}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     if (!ESCROW_ADDRESS) {
       toast.error('Contract not deployed yet.');
       return;
@@ -510,7 +525,7 @@ export default function LandlordDashboard({ account }: Props) {
             </div>
 
             {/* ── Full address + pin drop ── */}
-            <div>
+            <div id="field-address" className="scroll-mt-24">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                   Full Street Address <span style={{ color: 'var(--accent)' }}>*</span>
@@ -567,6 +582,7 @@ export default function LandlordDashboard({ account }: Props) {
                   <CheckCircle2 className="w-3 h-3" /> Pin placed at {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}
                 </motion.p>
               )}
+              {errorText('address')}
             </div>
 
             {/* ── PinDrop modal ── */}
@@ -581,7 +597,7 @@ export default function LandlordDashboard({ account }: Props) {
             )}
 
             {/* ── Location (neighbourhood display name) ── */}
-            <div>
+            <div id="field-location" className="scroll-mt-24">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Neighbourhood / Area</label>
                 <LangSelector compact showMic onVoiceResult={text => setForm(f => ({ ...f, location: text }))} />
@@ -596,6 +612,7 @@ export default function LandlordDashboard({ account }: Props) {
                   style={{ background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--ink)' }}
                 />
               </div>
+              {errorText('location')}
             </div>
 
             {/* ── Contact for inspections ── */}
@@ -672,7 +689,7 @@ export default function LandlordDashboard({ account }: Props) {
             </div>
 
             {/* ── Description ── */}
-            <div>
+            <div id="field-description" className="scroll-mt-24">
               <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Description</label>
               <textarea
                 value={form.description}
@@ -680,8 +697,9 @@ export default function LandlordDashboard({ account }: Props) {
                 placeholder="Describe the property — security, power, finishing…"
                 rows={3}
                 className="w-full px-4 py-3 rounded-2xl border text-sm outline-none resize-none transition-colors"
-                style={{ background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--ink)' }}
+                style={{ background: 'var(--surface-strong)', borderColor: fieldError('description') ? 'var(--danger)' : 'var(--border)', color: 'var(--ink)' }}
               />
+              {errorText('description')}
             </div>
 
             {/* ── Amenities ── */}
@@ -719,7 +737,7 @@ export default function LandlordDashboard({ account }: Props) {
                 <h3 className="text-sm font-bold" style={{ color: 'var(--ink)' }}>Pricing</h3>
               </div>
 
-              <div>
+              <div id="field-rent" className="scroll-mt-24">
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Annual Rent (₦)</label>
                 <input
                   type="number"
@@ -728,8 +746,9 @@ export default function LandlordDashboard({ account }: Props) {
                   onChange={e => setForm(f => ({ ...f, rentNgn: e.target.value }))}
                   placeholder="e.g. 480000"
                   className="w-full px-4 py-3.5 rounded-2xl border text-lg font-bold outline-none tabular-nums"
-                  style={{ background: 'var(--surface-muted)', borderColor: 'var(--border)', color: 'var(--ink)' }}
+                  style={{ background: 'var(--surface-muted)', borderColor: fieldError('rent') ? 'var(--danger)' : 'var(--border)', color: 'var(--ink)' }}
                 />
+                {errorText('rent')}
                 {parseFloat(form.rentNgn) > 0 && (
                   <p className="text-xs mt-1.5 tabular-nums" style={{ color: 'var(--muted)' }}>
                     ≈ {rentUsdc.toFixed(2)} USDC stored onchain
@@ -737,7 +756,7 @@ export default function LandlordDashboard({ account }: Props) {
                 )}
               </div>
 
-              <div>
+              <div id="field-deposit" className="scroll-mt-24">
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Caution fee (₦, refundable)</label>
                 <input
                   type="number"
@@ -746,8 +765,9 @@ export default function LandlordDashboard({ account }: Props) {
                   onChange={e => setForm(f => ({ ...f, depositNgn: e.target.value }))}
                   placeholder="e.g. 480000"
                   className="w-full px-4 py-3.5 rounded-2xl border text-lg font-bold outline-none tabular-nums"
-                  style={{ background: 'var(--surface-muted)', borderColor: 'var(--border)', color: 'var(--ink)' }}
+                  style={{ background: 'var(--surface-muted)', borderColor: fieldError('deposit') ? 'var(--danger)' : 'var(--border)', color: 'var(--ink)' }}
                 />
+                {errorText('deposit')}
               </div>
 
               {parseFloat(form.rentNgn) > 0 && parseFloat(form.depositNgn) > 0 && (
@@ -777,14 +797,9 @@ export default function LandlordDashboard({ account }: Props) {
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={() => { void handleSubmit(); }}
-              disabled={!isValid || loading}
-              className="w-full py-4 rounded-2xl font-semibold text-white text-base flex items-center justify-center gap-2 transition-all"
-              style={{
-                background: isValid && !loading
-                  ? 'var(--accent)'
-                  : 'var(--subtle)',
-                boxShadow: isValid && !loading ? 'none' : 'none',
-              }}
+              disabled={loading}
+              className="w-full py-4 rounded-2xl font-semibold text-white text-base flex items-center justify-center gap-2 transition-all disabled:opacity-70"
+              style={{ background: 'var(--accent)' }}
             >
               {loading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Listing onchain…</>
