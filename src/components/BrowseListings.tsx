@@ -13,6 +13,7 @@ import { useLang } from '@/lib/LangContext';
 import { nairaToUsdc } from '@/lib/naira';
 import { useChainState, type ChainListing } from '@/lib/chain';
 import PropertyMap from '@/components/PropertyMap';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import InspectionFlow from '@/components/InspectionFlow';
 import ShareListing from '@/components/ShareListing';
 import SavedSearches from '@/components/SavedSearches';
@@ -333,8 +334,10 @@ export default function BrowseListings({ account }: Props) {
       </AnimatePresence>
       <AnimatePresence>
         {mapListing && (
-          <PropertyMap key="map-modal" address={mapListing.address} lat={mapListing.lat} lng={mapListing.lng}
-            title={mapListing.title} onClose={() => setMapListing(null)} />
+          <ErrorBoundary key="map-modal" inline onReset={() => setMapListing(null)}>
+            <PropertyMap address={mapListing.address} lat={mapListing.lat} lng={mapListing.lng}
+              title={mapListing.title} onClose={() => setMapListing(null)} />
+          </ErrorBoundary>
         )}
       </AnimatePresence>
       <AnimatePresence>
