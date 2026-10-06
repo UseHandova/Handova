@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import InspectionFlow from '@/components/InspectionFlow';
 import { formatSlot, inspectionFor, useInspections } from '@/lib/inspections';
 import { openChat } from '@/lib/chat';
+import { useOwnershipVerified } from '@/lib/ownership';
 import ShareListing from '@/components/ShareListing';
 import SavedSearches from '@/components/SavedSearches';
 import TenantReviews from '@/components/TenantReviews';
@@ -54,6 +55,8 @@ export interface Listing {
   landlordPhone?: string;
   /** Placeholder shown before anything is listed onchain — cannot be rented. */
   sample?: boolean;
+  /** Unix ms when Handova approved the landlord's ownership documents for this address (0 = not checked). */
+  ownershipCheckedAt?: number;
 }
 
 const NEUTRAL = 'linear-gradient(135deg, #2a332e 0%, #46524b 100%)';
@@ -157,6 +160,7 @@ export default function BrowseListings({ account }: Props) {
   const hidden = useHiddenListings().data;
   const boostsData = useBoosts().data;
   const boosted = useMemo(() => new Set((boostsData?.boosts ?? []).map(b => b.listingId)), [boostsData]);
+  const ownershipAt = useOwnershipVerified();
   const visits = useInspections(account).inspections;
   const visitLabel = (l: Listing) => {
     const v = inspectionFor(visits, l.id);
@@ -172,11 +176,11 @@ export default function BrowseListings({ account }: Props) {
   const listings = useMemo(() => {
     const live = (chain.data?.listings ?? [])
       .filter(l => l.active && l.escrowId === 0n && !hidden?.has(String(l.id)))
-      .map(fromChain).reverse()
+      .map(l => ({ ...fromChain(l), ownershipCheckedAt: ownershipAt(l.landlord, l.meta.address) })).reverse()
       // Boosted (paid, verified) listings first; otherwise newest first.
       .sort((a, b) => Number(boosted.has(String(b.id))) - Number(boosted.has(String(a.id))));
     return live.length > 0 || !chain.isSuccess ? live : SAMPLE_LISTINGS;
-  }, [chain.data, chain.isSuccess, hidden, boosted]);
+  }, [chain.data, chain.isSuccess, hidden, boosted, ownershipAt]);
 
   // ?visit=<listingId> (from WhatsApp updates and My Leases) opens that home's inspection straight away.
   const visitParam = new URLSearchParams(window.location.search).get('visit');

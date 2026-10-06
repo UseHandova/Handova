@@ -27,6 +27,8 @@ import LangSelector from '@/components/LangSelector';
 import { geocodeAddress, PinDropMap } from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import InspectionRequests from '@/components/InspectionRequests';
+import { OwnershipRow } from '@/components/OwnershipProof';
+import { useMyOwnership } from '@/lib/ownership';
 import { clearReturnParams, diditSessionFromUrl } from '@/lib/url';
 import { usePath } from '@/lib/router';
 import { PROPERTY_TYPES, type PropertyType, type TranslationKey } from '@/lib/i18n';
@@ -57,6 +59,7 @@ interface MockListing {
   cover?: string;
   photoCount: number;
   hasVideo: boolean;
+  address?: string;
 }
 
 /** Nigerian number → international digits for wa.me (0803… → 234803…). Empty if it doesn't look valid. */
@@ -236,8 +239,10 @@ export default function LandlordDashboard({ account }: Props) {
         cover: l.meta.media?.find(m => m.type === 'image')?.url,
         photoCount: l.meta.media?.filter(m => m.type === 'image').length ?? 0,
         hasVideo: !!l.meta.media?.some(m => m.type === 'video'),
+        address: l.meta.address,
       }));
   }, [chain.data, account.address]);
+  const ownership = useMyOwnership(account);
   const [showVerification, setShowVerification] = useState(!!diditReturn);
   const [showBoost, setShowBoost] = useState<string | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
@@ -1089,6 +1094,7 @@ export default function LandlordDashboard({ account }: Props) {
                           {l.rooms} bed · <span style={{ color: 'var(--ink)' }} className="font-semibold">{formatNaira(l.rentNgn / USDC_TO_NGN)}</span>/yr
                         </p>
                       </div>
+                      <OwnershipRow account={account} listingId={l.id} address={l.address} mine={ownership} />
                       {!l.escrow && (
                         <div className="mt-auto px-4 pb-4 flex gap-2">
                           <button onClick={() => navigate(`/landlord/edit/${l.id}`)}
