@@ -7,6 +7,7 @@ import { Home, Search, Building2, ChevronRight } from 'lucide-react';
 import { useLang } from '@/lib/LangContext';
 import LangSelector from '@/components/LangSelector';
 import ThemeToggle from '@/components/ThemeToggle';
+import { useUi } from '@/lib/i18n-ui';
 
 interface Props {
   onPick: (role: 'tenant' | 'landlord') => void;
@@ -14,12 +15,13 @@ interface Props {
 
 export default function RolePicker({ onPick }: Props) {
   const { t } = useLang();
+  const u = useUi();
 
   const options = [
     { role: 'tenant' as const, icon: Search, title: t('iam_tenant'), desc: t('tenant_desc'),
-      points: ['Browse homes with photos and video', 'Pay into escrow, not to a stranger', 'Get your caution fee back'] },
+      points: [u('tenant_p1'), u('tenant_p2'), u('tenant_p3')] },
     { role: 'landlord' as const, icon: Building2, title: t('iam_landlord'), desc: t('landlord_desc'),
-      points: ['List in minutes — or by WhatsApp voice note', 'Get rent the day your tenant moves in', 'No agent taking a cut'] },
+      points: [u('landlord_p1'), u('landlord_p2'), u('landlord_p3')] },
   ];
 
   return (
@@ -40,7 +42,7 @@ export default function RolePicker({ onPick }: Props) {
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-2xl">
           <h1 className="text-2xl sm:text-3xl font-bold text-center" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>
-            How will you use RentFlow?
+            {u('how_use')}
           </h1>
           <p className="text-sm text-center mt-2 mb-8" style={{ color: 'var(--muted)' }}>{t('switch_any_time')}</p>
 

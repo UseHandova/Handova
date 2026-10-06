@@ -9,6 +9,7 @@ import { BadgeCheck, Camera, Heart, Home, Play, ShieldAlert } from 'lucide-react
 import { formatNaira } from '@/lib/naira';
 import { useLang } from '@/lib/LangContext';
 import type { Listing } from '@/components/BrowseListings';
+import { useUi } from '@/lib/i18n-ui';
 
 interface Props {
   listing: Listing;
@@ -19,23 +20,25 @@ interface Props {
 }
 
 export function VerificationPill({ listing, size = 'sm' }: { listing: Listing; size?: 'sm' | 'md' }) {
+  const u = useUi();
   const cls = size === 'sm' ? 'text-[11px] px-2 py-1 gap-1' : 'text-xs px-2.5 py-1.5 gap-1.5';
   if (listing.sample) {
-    return <span className={`inline-flex items-center rounded-full font-semibold bg-black/65 text-white ${cls}`}>Sample listing</span>;
+    return <span className={`inline-flex items-center rounded-full font-semibold bg-black/65 text-white ${cls}`}>{u('sample_pill')}</span>;
   }
   return listing.verifiedAt > 0 ? (
     <span className={`inline-flex items-center rounded-full font-semibold text-white ${cls}`} style={{ background: '#17803f' }}>
-      <BadgeCheck className="w-3.5 h-3.5" /> Verified landlord
+      <BadgeCheck className="w-3.5 h-3.5" /> {u('verified_landlord_pill')}
     </span>
   ) : (
     <span className={`inline-flex items-center rounded-full font-semibold bg-black/65 text-white ${cls}`}>
-      <ShieldAlert className="w-3.5 h-3.5" /> Landlord not verified
+      <ShieldAlert className="w-3.5 h-3.5" /> {u('not_verified_pill')}
     </span>
   );
 }
 
 export default function ListingCard({ listing, priceMode, saved, onToggleSave, onOpen }: Props) {
   const { t } = useLang();
+  const u = useUi();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
 
@@ -119,7 +122,7 @@ export default function ListingCard({ listing, priceMode, saved, onToggleSave, o
           <span className="text-sm" style={{ color: 'var(--muted)' }}> {priceMode === 'monthly' ? t('per_month') : t('per_year')}</span>
         </p>
         <p className="text-xs mt-1 truncate" style={{ color: 'var(--muted)' }}>
-          {formatNaira(listing.depositUsdc)} caution · held in escrow
+          {formatNaira(listing.depositUsdc)} {u('caution_escrow')}
           {listing.amenities.length > 0 && <> · {listing.amenities.slice(0, 3).join(', ')}</>}
         </p>
       </div>

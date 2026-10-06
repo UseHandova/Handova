@@ -20,6 +20,7 @@ import TenantReviews from '@/components/TenantReviews';
 import { api } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
 import MaintenanceTracker from '@/components/MaintenanceTracker';
+import { useUi } from '@/lib/i18n-ui';
 
 
 interface Props {
@@ -36,9 +37,8 @@ const SUCCESS: Record<TenantAction, string> = {
   dispute: 'Dispute opened. Upload your evidence so the RentFlow team can review.',
 };
 
-const STEPS = ['Paid', 'Keys', 'Moved in', 'Moved out', 'Settled'];
 
-/** Index of the current step in STEPS. */
+/** Index of the current step: Paid, Keys, Moved in, Moved out, Settled. */
 function progressStep(e: { status: EscrowStatus; handoverAt: number }): number {
   switch (e.status) {
     case EscrowStatus.Pending: return e.handoverAt ? 1 : 0;
@@ -58,6 +58,7 @@ export default function MyLeases({ account, address }: Props) {
   const chain = useChainState();
   const refreshChain = useRefreshChain();
   const now = useNow();
+  const u = useUi();
 
   // This tenant's escrows, newest first.
   const escrows = useMemo(() => (chain.data?.escrows ?? [])
@@ -108,15 +109,15 @@ export default function MyLeases({ account, address }: Props) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 pt-6 pb-28">
-      <h1 className="text-2xl sm:text-[28px] font-bold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>Your leases</h1>
+      <h1 className="text-2xl sm:text-[28px] font-bold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>{u('your_leases')}</h1>
       <p className="text-sm mt-1 mb-6" style={{ color: 'var(--muted)' }}>
-        Your money stays in escrow until each step is done. Nothing goes to the landlord before you move in.
+        {u('leases_sub')}
       </p>
 
       {escrows.length === 0 ? (
         <div className="rounded-2xl p-10 flex flex-col items-center text-center" style={{ border: '1px dashed var(--border-strong)' }}>
           <FileText className="w-8 h-8 mb-3" style={{ color: 'var(--subtle)' }} />
-          <p className="font-semibold" style={{ color: 'var(--ink)' }}>No leases yet</p>
+          <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('no_leases')}</p>
           <p className="text-sm mt-1 max-w-sm" style={{ color: 'var(--muted)' }}>
             When you rent a home on RentFlow, your payment, move-in and caution fee are tracked here.
           </p>
@@ -134,15 +135,15 @@ export default function MyLeases({ account, address }: Props) {
             switch (status) {
               case EscrowStatus.Pending:
                 next = escrow.handoverAt
-                  ? { text: `Your landlord says you have the keys. Confirm within ${formatCountdown(escrow.handoverAt + MOVE_IN_WINDOW_MS, now)} — or report a problem if something is wrong.`, action: { label: 'I have moved in', run: 'confirmMoveIn', primary: true } }
-                  : { text: 'Your rent and caution fee are safe in escrow. Confirm once you have the keys and have moved in.', action: { label: 'I have moved in', run: 'confirmMoveIn', primary: true } };
+                  ? { text: `Your landlord says you have the keys. Confirm within ${formatCountdown(escrow.handoverAt + MOVE_IN_WINDOW_MS, now)} — or report a problem if something is wrong.`, action: { label: u('moved_in_btn'), run: 'confirmMoveIn', primary: true } }
+                  : { text: 'Your rent and caution fee are safe in escrow. Confirm once you have the keys and have moved in.', action: { label: u('moved_in_btn'), run: 'confirmMoveIn', primary: true } };
                 break;
               case EscrowStatus.Active:
-                next = { text: 'You live here. Your caution fee stays in escrow until you move out and the landlord inspects.', action: { label: 'I am moving out', run: 'endTenancy' } };
+                next = { text: 'You live here. Your caution fee stays in escrow until you move out and the landlord inspects.', action: { label: u('moving_out_btn'), run: 'endTenancy' } };
                 break;
               case EscrowStatus.Ending:
                 next = now >= reviewDeadline
-                  ? { text: 'The inspection period is over. Your caution fee is ready.', action: { label: 'Claim my caution fee', run: 'claimDeposit', primary: true } }
+                  ? { text: 'The inspection period is over. Your caution fee is ready.', action: { label: u('claim_caution'), run: 'claimDeposit', primary: true } }
                   : { text: `Your landlord is inspecting. If they don't raise an issue, you can claim your caution fee in ${formatCountdown(reviewDeadline, now)}.` };
                 break;
               case EscrowStatus.Disputed:
@@ -180,7 +181,7 @@ export default function MyLeases({ account, address }: Props) {
 
                   {/* Progress */}
                   <ol className="flex items-center gap-1 my-4" aria-label="Tenancy progress">
-                    {STEPS.map((label, i) => {
+                    {[u('step_paid'), u('step_keys'), u('step_moved_in'), u('step_moved_out'), u('step_settled')].map((label, i) => {
                       const done = i < step;
                       const current = i === step;
                       return (
@@ -216,11 +217,11 @@ export default function MyLeases({ account, address }: Props) {
                     )}
                     <div className="flex flex-wrap gap-1 ml-auto">
                       {[
-                        { label: 'Lease PDF', icon: Download, onClick: () => setPdfEscrow(escrow.id) },
-                        { label: 'Request repair', icon: Wrench, onClick: () => setShowMaintenance(true) },
-                        ...(eligible.data?.has(String(escrow.id)) ? [{ label: 'Rate landlord', icon: Star, onClick: () => setRateEscrow({ id: escrow.id, location: escrow.location }) }] : []),
+                        { label: u('lease_pdf'), icon: Download, onClick: () => setPdfEscrow(escrow.id) },
+                        { label: u('request_repair'), icon: Wrench, onClick: () => setShowMaintenance(true) },
+                        ...(eligible.data?.has(String(escrow.id)) ? [{ label: u('rate_landlord_btn'), icon: Star, onClick: () => setRateEscrow({ id: escrow.id, location: escrow.location }) }] : []),
                         {
-                          label: canDispute(escrow) ? 'Report a problem' : 'Evidence',
+                          label: canDispute(escrow) ? u('report_problem') : 'Evidence',
                           icon: AlertTriangle,
                           onClick: () => { if (canDispute(escrow)) void run(escrow.id, 'dispute'); else setDisputeEscrow(escrow.id); },
                         },

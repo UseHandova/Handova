@@ -12,6 +12,7 @@ import {
 import { formatNaira } from '@/lib/naira';
 import { useLang } from '@/lib/LangContext';
 import type { Listing } from '@/components/BrowseListings';
+import { useUi } from '@/lib/i18n-ui';
 
 interface Props {
   listing: Listing;
@@ -27,14 +28,10 @@ interface Props {
 /** Property types whose name already says how many bedrooms there are. */
 const BEDROOM_TYPES = new Set(['single_room', 'self_contain', 'mini_flat', 'two_bed', 'three_bed']);
 
-const STEPS = [
-  'You pay rent + caution fee into the RentFlow escrow — not to the landlord.',
-  'Rent is released to the landlord only after you confirm you\'ve moved in.',
-  'Your caution fee comes back after you move out, unless there\'s a damage dispute.',
-];
 
 export default function ListingDetail({ listing, saved, onToggleSave, onClose, onRent, onMap, onShare, onReviews }: Props) {
   const { t } = useLang();
+  const u = useUi();
   const [index, setIndex] = useState(0);
   const media = listing.media;
   const current = media[index];
@@ -139,16 +136,16 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
             <div className="flex gap-3 p-4 rounded-2xl" style={{ background: 'var(--accent-soft)', border: '1px solid var(--border)' }}>
               <BadgeCheck className="w-5 h-5 shrink-0 mt-0.5" style={{ color: 'var(--success)' }} />
               <div className="text-sm" style={{ color: 'var(--ink-2)' }}>
-                <p className="font-semibold" style={{ color: 'var(--ink)' }}>Verified landlord</p>
-                <p className="mt-0.5">Identity checked against their NIN record with NIMC on {verifiedDate}. Recorded onchain — it can't be faked.</p>
+                <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('trust_verified_title')}</p>
+                <p className="mt-0.5">{u('trust_verified_body', { date: verifiedDate })}</p>
               </div>
             </div>
           ) : (
             <div className="flex gap-3 p-4 rounded-2xl" style={{ background: 'rgba(242,180,90,0.10)', border: '1px solid rgba(242,180,90,0.35)' }}>
               <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" style={{ color: 'var(--warning)' }} />
               <div className="text-sm" style={{ color: 'var(--ink-2)' }}>
-                <p className="font-semibold" style={{ color: 'var(--ink)' }}>Landlord not verified yet</p>
-                <p className="mt-0.5">RentFlow hasn't checked this landlord's identity. Inspect the property in person, and only pay through RentFlow escrow — never by bank transfer.</p>
+                <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('trust_unverified_title')}</p>
+                <p className="mt-0.5">{u('trust_unverified_body')}</p>
               </div>
             </div>
           )}
@@ -156,9 +153,9 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
           {/* Cost breakdown */}
           <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
             {[
-              ['Rent (1 year)', listing.rentUsdc],
-              ['Caution fee (refundable)', listing.depositUsdc],
-              ['Agent fee', 0],
+              [u('rent_year'), listing.rentUsdc],
+              [u('caution_refundable'), listing.depositUsdc],
+              [u('agent_fee'), 0],
             ].map(([label, amount]) => (
               <div key={label as string} className="flex justify-between px-4 py-2.5 text-sm" style={{ borderBottom: '1px solid var(--border)' }}>
                 <span style={{ color: 'var(--muted)' }}>{label}</span>
@@ -166,7 +163,7 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
               </div>
             ))}
             <div className="flex justify-between px-4 py-3 text-sm font-semibold" style={{ background: 'var(--surface-muted)' }}>
-              <span style={{ color: 'var(--ink)' }}>You pay into escrow</span>
+              <span style={{ color: 'var(--ink)' }}>{u('pay_into_escrow')}</span>
               <span className="tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(listing.rentUsdc + listing.depositUsdc)}</span>
             </div>
           </div>
@@ -174,10 +171,10 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
           {/* How escrow protects you */}
           <div>
             <p className="text-sm font-semibold flex items-center gap-1.5 mb-2" style={{ color: 'var(--ink)' }}>
-              <ShieldCheck className="w-4 h-4" style={{ color: 'var(--success)' }} /> How your money is protected
+              <ShieldCheck className="w-4 h-4" style={{ color: 'var(--success)' }} /> {u('protected_title')}
             </p>
             <ol className="space-y-1.5">
-              {STEPS.map((s, i) => (
+              {[u('protect_1'), u('protect_2'), u('protect_3')].map((s, i) => (
                 <li key={s} className="flex gap-2.5 text-sm" style={{ color: 'var(--ink-2)' }}>
                   <span className="w-5 h-5 shrink-0 rounded-full text-[11px] font-bold flex items-center justify-center"
                     style={{ background: 'var(--surface-muted)', color: 'var(--muted)' }}>{i + 1}</span>
@@ -189,7 +186,7 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
 
           {listing.desc && (
             <div>
-              <p className="text-sm font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>About this home</p>
+              <p className="text-sm font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>{u('about_home')}</p>
               <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-2)' }}>{listing.desc}</p>
             </div>
           )}
@@ -222,13 +219,13 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
         <div className="sticky bottom-0 p-4 sm:px-6 flex items-center gap-3"
           style={{ background: 'var(--popover)', borderTop: '1px solid var(--border)' }}>
           <div className="hidden sm:block mr-auto">
-            <p className="text-xs" style={{ color: 'var(--muted)' }}>Total into escrow</p>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>{u('total_escrow')}</p>
             <p className="font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(listing.rentUsdc + listing.depositUsdc)}</p>
           </div>
           <button onClick={onRent}
             className="flex-1 sm:flex-none sm:px-8 py-3.5 rounded-xl font-semibold text-white text-sm"
             style={{ background: 'var(--accent)' }}>
-            Inspect &amp; rent
+            {u('inspect_rent')}
           </button>
         </div>
       </motion.div>
