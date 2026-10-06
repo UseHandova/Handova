@@ -59,7 +59,7 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 | Frontend | React 18, Vite, TypeScript, Tailwind, Framer Motion |
 | Web3 | viem v2, wagmi v2, Circle Modular Wallets (passkeys + bundler + paymaster) |
 | Contracts | Solidity 0.8.28, Foundry, OpenZeppelin 5 |
-| Bot server | Express, Twilio WhatsApp, Groq or OpenAI (Llama / GPT listing parsing + Whisper voice transcription) |
+| Bot server | Express, Twilio WhatsApp, Groq or OpenAI (gpt-oss / GPT listing parsing + Whisper voice transcription) |
 | Chain | Arc Testnet (chain id `5042002`), USDC `0x3600000000000000000000000000000000000000` |
 
 ## Deployed contracts (Arc Testnet)

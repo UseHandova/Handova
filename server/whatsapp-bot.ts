@@ -36,7 +36,7 @@ app.use(express.json());
 // Groq's API is OpenAI-compatible, so the same SDK talks to either provider.
 const useGroq = !!process.env.GROQ_API_KEY;
 const aiConfigured = useGroq || !!process.env.OPENAI_API_KEY;
-const CHAT_MODEL = process.env.AI_CHAT_MODEL ?? (useGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini');
+const CHAT_MODEL = process.env.AI_CHAT_MODEL ?? (useGroq ? 'openai/gpt-oss-120b' : 'gpt-4o-mini');
 const TRANSCRIBE_MODEL = process.env.AI_TRANSCRIBE_MODEL ?? (useGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
 
 // Created lazily so the server still boots (and serves the admin API) without a key.
@@ -102,7 +102,7 @@ async function parseListingFromText(text: string): Promise<Omit<PendingListing, 
       { role: 'user', content: text },
     ],
     response_format: { type: 'json_object' },
-    max_tokens: 400,
+    max_tokens: 1000, // headroom for reasoning models
   });
 
   const raw = completion.choices[0]?.message?.content ?? '{}';
