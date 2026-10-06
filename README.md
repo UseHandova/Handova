@@ -50,6 +50,7 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 - **Prices in Naira.** Everything is shown in ₦, and USDC runs underneath.
 - **Five languages:** English, Yorùbá, Naija Pidgin, Igbo, Hausa.
 - **Lease certificate NFT**, minted on move-in.
+- **Verified landlords.** NIN + selfie face-match through [Dojah](https://dojah.io); a pass is recorded onchain (`verifiedAt`) so every tenant sees the badge. The NIN and selfie are never stored — only a salted hash of the NIN, to stop one identity verifying many accounts.
 - Map search, saved searches, inspections, dispute evidence upload, maintenance tracker, lease PDF export, landlord verification.
 
 ## Tech stack
@@ -93,6 +94,12 @@ bun run contracts:build
 bun run contracts:test
 ```
 
+Verification end-to-end test (local Anvil chain + real escrow + stubbed Dojah):
+
+```bash
+bun run test:verify
+```
+
 ### Environment variables
 
 | Variable | Where it's used | Get it from |
@@ -104,6 +111,8 @@ bun run contracts:test
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_NUMBER` | WhatsApp bot | [Twilio Console](https://console.twilio.com) |
 | `GROQ_API_KEY` | Parsing listings & voice notes (free tier) | [Groq Console](https://console.groq.com/keys) |
 | `OPENAI_API_KEY` | Fallback when `GROQ_API_KEY` is empty | [OpenAI Platform](https://platform.openai.com) |
+| `DOJAH_APP_ID` / `DOJAH_SECRET_KEY` / `DOJAH_ENV` | Landlord NIN + selfie verification | [Dojah dashboard](https://dojah.io) → Developers → Configuration |
+| `VERIFIER_PRIVATE_KEY` | Server key holding the escrow's verifier role | `cast wallet new`, then `setVerifier` from the owner |
 
 For WhatsApp, point your Twilio sandbox webhook at `https://<your-host>/api/whatsapp/incoming` (use ngrok in development).
 
