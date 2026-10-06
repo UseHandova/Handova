@@ -5,10 +5,11 @@
  */
 
 import { useState } from 'react';
-import { CalendarCheck, CheckCircle2, Clock, Loader2, MessageCircle, Phone, XCircle } from 'lucide-react';
+import { CalendarCheck, CheckCircle2, Clock, Loader2, MessageCircle, MessagesSquare, Phone, XCircle } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { toast } from 'sonner';
 import { useNow } from '@/lib/chain';
+import { openChat } from '@/lib/chat';
 import SlotPicker from '@/components/SlotPicker';
 import { OUTCOME_OPENS_MS, formatSlot, prettyPhone, useInspections, waLink, type Inspection } from '@/lib/inspections';
 
@@ -97,12 +98,16 @@ function Item({ i, ins }: { i: Inspection; ins: ReturnType<typeof useInspections
           {i.status === 'approved' && i.landlordConfirmedAt && !i.tenantConfirmedAt && <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>You confirmed the visit. Waiting for the tenant.</p>}
           {i.status === 'completed' && <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--accent)' }}><CheckCircle2 className="w-3 h-3" /> Both confirmed. If they rent it, you'll be notified when rent is in escrow.</p>}
         </div>
+        <div className="flex gap-1.5 shrink-0">
+          <button onClick={() => openChat({ listingId: i.listingId, tenant: i.tenant })} aria-label={`Chat with ${i.tenantName} in Handova`} title="Chat in Handova"
+            className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}><MessagesSquare className="w-4 h-4" /></button>
         {i.tenantPhone && (
-          <div className="flex gap-1.5 shrink-0">
+          <>
             <a href={`tel:+${i.tenantPhone}`} aria-label={`Call ${i.tenantName}`} title={prettyPhone(i.tenantPhone)} className="w-9 h-9 rounded-full flex items-center justify-center" style={ghost}><Phone className="w-4 h-4" /></a>
             <a href={waLink(i.tenantPhone, `Hello ${i.tenantName.split(' ')[0]}, this is the landlord for ${i.place} on Handova.`)} target="_blank" rel="noreferrer" aria-label={`WhatsApp ${i.tenantName}`} className="w-9 h-9 rounded-full flex items-center justify-center" style={ghost}><MessageCircle className="w-4 h-4" /></a>
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       {/* New request */}

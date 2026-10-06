@@ -7,6 +7,7 @@ import LanguageWelcome from '@/components/LanguageWelcome';
 import RolePicker from '@/components/RolePicker';
 import ChainStatusBanner from '@/components/ChainStatusBanner';
 import { useCaptureReferral } from '@/components/ReferralSystem';
+import ChatCenter from '@/components/ChatCenter';
 import Header from '@/components/Header';
 import TabBar from '@/components/TabBar';
 import { navigate as go, rememberRole, rememberedRole, roleFromPath, usePath, type Role } from '@/lib/router';
@@ -124,7 +125,7 @@ function MainApp({ account, address, role, tab, navigate, pendingUsdc, onSignOut
   // ── Main app ──────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-dvh" style={{ background: 'var(--bg-gradient)' }}>
-      <Header address={address} pendingUsdc={pendingUsdc}
+      <Header address={address} pendingUsdc={pendingUsdc} chat={<ChatCenter account={account} />}
         onSignOut={onSignOut} onWithdraw={onWithdraw}
         role={role} onSwitchRole={() => { rememberRole(null); navigate('/'); }}
         onOpenAdmin={() => setShowAdmin(true)} />
