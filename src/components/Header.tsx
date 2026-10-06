@@ -55,7 +55,7 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
         <motion.div
           whileTap={{ scale: 0.93 }}
           className="w-8 h-8 rounded-xl flex items-center justify-center"
-          style={{ background: 'var(--accent)', boxShadow: '0 2px 12px var(--accent-glow)' }}
+          style={{ background: 'var(--accent)', boxShadow: 'none' }}
         >
           <Home className="w-4 h-4 text-white" />
         </motion.div>

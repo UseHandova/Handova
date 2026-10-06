@@ -119,7 +119,7 @@ export default function ShareListing({ listing, onClose }: Props) {
           {typeof navigator.share === 'function' && (
             <motion.button whileTap={{ scale: 0.97 }} onClick={shareNative}
               className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-              style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 4px 16px var(--accent-glow)' }}>
+              style={{ background: 'var(--accent)', boxShadow: 'none' }}>
               <Share2 className="w-4 h-4" />
               {t('share_via')} Phone
             </motion.button>

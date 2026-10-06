@@ -81,6 +81,7 @@ function fromChain(l: ChainListing): Listing {
     media: (m.media ?? []).filter(x => typeof x?.url === 'string' && (x.type === 'image' || x.type === 'video')),
     verifiedAt: l.landlordVerifiedAt,
     landlord: l.landlord,
+    landlordPhone: m.phone,
   };
 }
 

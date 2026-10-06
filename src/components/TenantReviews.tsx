@@ -198,7 +198,7 @@ export default function TenantReviews({ landlordName = 'Landlord', onClose, mode
                     </div>
                     <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleSubmit(); }} disabled={submitting || rating === 0}
                       className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                      style={{ background: rating > 0 && !submitting ? 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' : 'var(--subtle)' }}>
+                      style={{ background: rating > 0 && !submitting ? 'var(--accent)' : 'var(--subtle)' }}>
                       {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> : <><Star className="w-4 h-4" /> {t('submit_review')}</>}
                     </motion.button>
                   </>

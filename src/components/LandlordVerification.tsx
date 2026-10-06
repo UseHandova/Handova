@@ -119,7 +119,7 @@ export default function LandlordVerification({ account, onClose }: Props) {
               <motion.div key="verified" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                 className="flex flex-col items-center text-center py-6 gap-4">
                 <div className="w-20 h-20 rounded-full flex items-center justify-center"
-                  style={{ background: 'linear-gradient(135deg, var(--success) 0%, #52e09b 100%)', boxShadow: '0 8px 32px rgba(26,128,71,0.3)' }}>
+                  style={{ background: 'var(--success)', boxShadow: '0 8px 32px rgba(26,128,71,0.3)' }}>
                   <BadgeCheck className="w-10 h-10 text-white" />
                 </div>
                 <div>
@@ -136,7 +136,7 @@ export default function LandlordVerification({ account, onClose }: Props) {
                   )}
                 </div>
                 <button onClick={onClose} className="px-8 py-3 rounded-2xl font-semibold text-white"
-                  style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
+                  style={{ background: 'var(--accent)' }}>
                   Done
                 </button>
               </motion.div>
@@ -183,7 +183,7 @@ export default function LandlordVerification({ account, onClose }: Props) {
 
                 <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleSubmit(); }} disabled={!canSubmit}
                   className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{ background: canSubmit ? 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' : 'var(--subtle)' }}>
+                  style={{ background: canSubmit ? 'var(--accent)' : 'var(--subtle)' }}>
                   {submitting
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Checking with NIMC…</>
                     : <><BadgeCheck className="w-4 h-4" /> Verify my identity</>}

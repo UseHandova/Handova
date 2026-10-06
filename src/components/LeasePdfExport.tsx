@@ -132,7 +132,7 @@ export default function LeasePdfExport({ lease, onClose }: Props) {
       <div className="flex gap-2">
         <motion.button whileTap={{ scale: 0.96 }} onClick={generatePdf} disabled={generating}
           className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-          style={{ background: generating ? 'var(--subtle)' : 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: generating ? 'none' : '0 4px 16px var(--accent-glow)' }}>
+          style={{ background: generating ? 'var(--subtle)' : 'var(--accent)', boxShadow: generating ? 'none' : 'none' }}>
           {generating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('generating_pdf')}</> : <><Download className="w-3.5 h-3.5" /> {t('download_lease')}</>}
         </motion.button>
         {explorerUrl && (

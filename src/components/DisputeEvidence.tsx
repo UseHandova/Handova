@@ -112,7 +112,7 @@ export default function DisputeEvidence({ escrowId, onClose }: Props) {
                   <p className="text-sm" style={{ color: 'var(--muted)' }}>The RentFlow team will review your evidence and resolve the dispute within 48 hours.</p>
                 </div>
                 <button onClick={onClose} className="px-8 py-3 rounded-2xl font-semibold text-white"
-                  style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>Done</button>
+                  style={{ background: 'var(--accent)' }}>Done</button>
               </motion.div>
             ) : (
               <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
@@ -185,7 +185,7 @@ export default function DisputeEvidence({ escrowId, onClose }: Props) {
 
                 <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleSubmit(); }} disabled={submitting}
                   className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{ background: submitting ? 'var(--subtle)' : 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)', boxShadow: submitting ? 'none' : '0 4px 16px rgba(245,158,11,0.3)' }}>
+                  style={{ background: submitting ? 'var(--subtle)' : '#a35a00', boxShadow: submitting ? 'none' : '0 4px 16px rgba(245,158,11,0.3)' }}>
                   {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading evidence…</> : <><Upload className="w-4 h-4" /> {t('submit_evidence')}</>}
                 </motion.button>
               </motion.div>

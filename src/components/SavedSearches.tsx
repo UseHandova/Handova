@@ -177,7 +177,7 @@ export default function SavedSearches({ onClose }: Props) {
 
                 <motion.button whileTap={{ scale: 0.97 }} onClick={addSearch}
                   className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
+                  style={{ background: 'var(--accent)' }}>
                   <Bell className="w-4 h-4" /> {t('save_search')}
                 </motion.button>
               </motion.div>

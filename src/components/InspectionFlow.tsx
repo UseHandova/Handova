@@ -47,14 +47,20 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
   const refreshChain = useRefreshChain();
 
 
+  const landlordPhone = (listing.landlordPhone ?? '').replace(/\D/g, '');
+
   function bookInspection() {
-    // Open WhatsApp deep-link to landlord contact (demo number)
-    const text = encodeURIComponent(
-      `Hello, I am interested in the property at ${listing.address || listing.location}. I would like to book an inspection. (via RentFlow)`
-    );
-    window.open(`https://wa.me/2348000000000?text=${text}`, '_blank');
+    if (listing.sample) {
+      toast.info('This is a sample listing — there is no real landlord to contact.');
+      return;
+    }
+    if (landlordPhone) {
+      const text = encodeURIComponent(
+        `Hello, I saw your property at ${listing.address || listing.location} on RentFlow and would like to book an inspection.`
+      );
+      window.open(`https://wa.me/${landlordPhone}?text=${text}`, '_blank');
+    }
     setStep('booked');
-    toast.success('Inspection request sent via WhatsApp!');
   }
 
   function confirmVisit() {
@@ -200,7 +206,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
               <p className="text-[11px] tabular-nums" style={{ color: 'var(--muted)' }}>{formatUsdc(listing.rentUsdc)}</p>
             </div>
             <div className="text-right">
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>Security Deposit</p>
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>Caution fee (refundable)</p>
               <p className="display font-bold tabular-nums" style={{ color: 'var(--ink)', fontSize: '1.15rem' }}>
                 {formatNaira(listing.depositUsdc)}
               </p>
@@ -257,13 +263,17 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                   onClick={bookInspection}
                   className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
                   style={{
-                    background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
-                    boxShadow: '0 4px 16px rgba(37,211,102,0.3)',
+                    background: '#1fa855',
                   }}
                 >
                   <Phone className="w-4 h-4" />
-                  Book Inspection via WhatsApp
+                  {landlordPhone ? 'Book inspection on WhatsApp' : 'I have arranged an inspection'}
                 </motion.button>
+                {!landlordPhone && !listing.sample && (
+                  <p className="text-xs text-center" style={{ color: 'var(--muted)' }}>
+                    This landlord hasn't shared a WhatsApp number. Arrange the visit with them, then continue — you only pay after you've seen the property.
+                  </p>
+                )}
               </motion.div>
             )}
 
@@ -295,9 +305,9 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                   onClick={confirmVisit}
                   className="w-full py-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2"
                   style={{
-                    background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)',
+                    background: 'var(--accent)',
                     color: 'white',
-                    boxShadow: '0 4px 16px var(--accent-glow)',
+                    boxShadow: 'none',
                   }}
                 >
                   <Eye className="w-4 h-4" />
@@ -383,7 +393,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                   transition={{ type: 'spring', stiffness: 320, damping: 18, delay: 0.1 }}
                   className="w-20 h-20 rounded-full flex items-center justify-center"
                   style={{
-                    background: 'linear-gradient(135deg, var(--success, #1a8047) 0%, #52e09b 100%)',
+                    background: 'var(--success)',
                     boxShadow: '0 12px 40px rgba(26,128,71,0.3)',
                   }}
                 >
@@ -402,8 +412,8 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                   onClick={onClose}
                   className="px-8 py-3.5 rounded-2xl font-semibold text-white"
                   style={{
-                    background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)',
-                    boxShadow: '0 4px 20px var(--accent-glow)',
+                    background: 'var(--accent)',
+                    boxShadow: 'none',
                   }}
                 >
                   Done

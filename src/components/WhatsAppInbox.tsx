@@ -213,7 +213,7 @@ export default function WhatsAppInbox({ account }: Props) {
           ) : (
             <button onClick={() => { void publish(); }} disabled={publishing}
               className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
-              style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
+              style={{ background: 'var(--accent)' }}>
               {publishing ? <><Loader2 className="w-4 h-4 animate-spin" /> Publishing…</> : <><Check className="w-4 h-4" /> This is correct — publish my house</>}
             </button>
           )}
