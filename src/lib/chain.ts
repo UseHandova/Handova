@@ -31,6 +31,8 @@ export interface ListingMeta {
   lat?: number;
   lng?: number;
   source?: string;
+  /** Uploaded photos/videos (URLs served by /api/media). */
+  media?: { type: 'image' | 'video'; url: string }[];
 }
 
 export interface ChainListing {
@@ -42,8 +44,8 @@ export interface ChainListing {
   meta: ListingMeta;
   /** Current escrow on this listing, 0n when the property is free to rent. */
   escrowId: bigint;
-  /** Landlord passed identity verification (recorded onchain by the KYC verifier). */
-  landlordVerified: boolean;
+  /** Unix ms when the landlord passed identity verification onchain (0 = not verified). */
+  landlordVerifiedAt: number;
 }
 
 export interface ChainEscrow {
@@ -114,7 +116,7 @@ async function fetchChainState(): Promise<ChainState> {
     const row = listingRows[i * 2].result as readonly [Address, bigint, bigint, boolean, string] | undefined;
     const escrowId = (listingRows[i * 2 + 1].result as bigint | undefined) ?? 0n;
     const [landlord, rent, deposit, active, metadataUri] = row ?? ['0x0000000000000000000000000000000000000000', 0n, 0n, false, ''];
-    return { id, landlord, rentUsdc: usdc(rent), depositUsdc: usdc(deposit), active, meta: parseMeta(metadataUri), escrowId, landlordVerified: false };
+    return { id, landlord, rentUsdc: usdc(rent), depositUsdc: usdc(deposit), active, meta: parseMeta(metadataUri), escrowId, landlordVerifiedAt: 0 };
   });
 
   // Verified badges for every landlord with a listing.
@@ -123,8 +125,8 @@ async function fetchChainState(): Promise<ChainState> {
     const verified = await readClient.multicall({
       contracts: landlords.map(a => ({ ...escrowContract, functionName: 'verifiedAt', args: [a] } as const)),
     });
-    const isVerified = new Map(landlords.map((a, i) => [a, ((verified[i].result as bigint | undefined) ?? 0n) > 0n]));
-    for (const l of listings) l.landlordVerified = isVerified.get(l.landlord.toLowerCase() as Address) ?? false;
+    const verifiedAt = new Map(landlords.map((a, i) => [a, ms((verified[i].result as bigint | undefined) ?? 0n)]));
+    for (const l of listings) l.landlordVerifiedAt = verifiedAt.get(l.landlord.toLowerCase() as Address) ?? 0;
   }
 
   const byId = new Map(listings.map(l => [l.id, l]));

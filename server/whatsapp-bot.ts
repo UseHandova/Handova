@@ -29,6 +29,7 @@ import cors from 'cors';
 import OpenAI from 'openai';
 import twilio from 'twilio';
 import { mountVerification } from './verification';
+import { mountMedia } from './media';
 
 const app = express();
 const PORT = 3001;
@@ -356,6 +357,7 @@ app.post('/api/bot/reject', (req, res) => {
 });
 
 mountVerification(app);
+mountMedia(app);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

@@ -51,6 +51,7 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 - **Five languages:** English, Yorùbá, Naija Pidgin, Igbo, Hausa.
 - **Lease certificate NFT**, minted on move-in.
 - **Verified landlords.** NIN + selfie face-match through [Dojah](https://dojah.io); a pass is recorded onchain (`verifiedAt`) so every tenant sees the badge. The NIN and selfie are never stored — only a salted hash of the NIN, to stop one identity verifying many accounts.
+- **Photo & video listings.** Landlords upload photos and a video tour; tenants see a photo-first grid, hover to preview the video, and open a full gallery. Files are served by the API server (`/api/media`, local disk via `MEDIA_DIR`) — swap to S3/R2/IPFS for production.
 - Map search, saved searches, inspections, dispute evidence upload, maintenance tracker, lease PDF export, landlord verification.
 
 ## Tech stack

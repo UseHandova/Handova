@@ -17,11 +17,9 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 export default function TabBar({ active, onChange }: Props) {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around px-4 pb-safe"
+      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-center gap-[min(30vw,12rem)] px-4 pb-safe"
       style={{
-        background: 'var(--glass-card)',
-        backdropFilter: 'blur(24px)',
-        WebkitBackdropFilter: 'blur(24px)',
+        background: 'var(--popover)',
         borderTop: '1px solid var(--border)',
         paddingTop: '10px',
         paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
