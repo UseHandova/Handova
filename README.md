@@ -55,6 +55,8 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 ## Features
 
 - **Passkey login.** Circle Modular Wallets smart accounts with gasless transactions via paymaster. No seed phrases.
+- **Phone-number login** for people without Face ID/fingerprint, or who lost their phone. The number is proven with a free "reverse OTP": the app opens WhatsApp with `HANDOVA LOGIN 123456` pre-typed and the person sends it to the bot. The wallet key is created on the device and locked with a 6-digit PIN plus a per-account server share. The server keeps only that locked backup, so a new phone can sign in, but the server alone can't open it. Wrong PINs lock for 15 minutes, then 24 hours, and never permanently (`server/phone-auth.ts`, `src/lib/phone-wallet.ts`).
+- **Property ownership checks.** Landlords upload a C of O, deed, Governor's consent, survey, allocation letter or utility bill. The documents are private (only the landlord and the Handova admin can open them) and are reviewed in the admin dashboard. Approved listings show "Ownership checked". Approval is tied to the landlord and the street address, so it survives edits, and rejected documents are deleted (`server/ownership.ts`).
 - **WhatsApp listing bot.** A landlord sends a text or voice note, AI turns it into a listing (via Groq's free tier or OpenAI), and an admin approves it onchain.
 - **Prices in Naira.** Everything is shown in ₦, and USDC runs underneath.
 - **Five languages:** English, Yorùbá, Naija Pidgin, Igbo, Hausa.
@@ -180,9 +182,12 @@ src/
 ## Roadmap
 
 - [ ] **Naira on/off-ramp.** Tenants pay by bank transfer and landlords are paid out to a Nigerian bank account, through a licensed partner.
-- [ ] **Phone-number / WhatsApp OTP login**, with Google/Facebook as secondary options (passkeys are lost with the phone).
-- [ ] **Shared backend storage** for reviews, verification and referrals, which currently live in browser `localStorage`.
-- [ ] **Property ownership verification** with onchain attestations (C of O, utility bill, field visit).
+- [x] **Phone-number login** via WhatsApp reverse OTP and a PIN-locked wallet backup.
+- [ ] **Google sign-in** as another option (needs a Google OAuth client ID).
+- [x] **Shared backend storage** for reviews, repairs, referrals, boosts, inspections, chat and moderation (SQLite on the API server).
+- [x] **Property ownership checks**, reviewed by the Handova admin.
+- [ ] **Onchain ownership attestations**, so approvals can be verified without trusting Handova's server. Needs a contract update.
+- [ ] **Enforce "inspect before paying" in the contract**, not only in the app.
 - [ ] **Non-transferable lease NFTs** to give tenants a portable rental history.
 - [ ] **Rent savings vault** and monthly rent payments into escrow.
 - [ ] Live USDC/NGN rate (currently fixed at ₦1,600).
