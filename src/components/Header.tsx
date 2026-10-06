@@ -7,6 +7,7 @@ import LangSelector from '@/components/LangSelector';
 import NotificationCenter from '@/components/NotificationCenter';
 
 import { useIsAdmin } from '@/lib/chain';
+import { navigate } from '@/lib/router';
 
 interface Props {
   address: string;
@@ -52,17 +53,19 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
     >
       {/* Left: Logo + role pill */}
       <div className="flex items-center gap-2.5">
-        <motion.div
+        <motion.button
           whileTap={{ scale: 0.93 }}
+          onClick={() => navigate(role ? `/${role}` : '/')}
+          aria-label="Home"
           className="w-8 h-8 rounded-xl flex items-center justify-center"
           style={{ background: 'var(--accent)', boxShadow: 'none' }}
         >
           <Home className="w-4 h-4 text-white" />
-        </motion.div>
+        </motion.button>
         <div className="flex items-center gap-2">
-          <span className="display font-semibold text-base" style={{ color: 'var(--ink)' }}>
+          <button onClick={() => navigate(role ? `/${role}` : '/')} className="display font-semibold text-base" style={{ color: 'var(--ink)' }}>
             RentFlow
-          </span>
+          </button>
           {role && roleColor && (
             <motion.span
               initial={{ scale: 0.8, opacity: 0 }}
