@@ -2,14 +2,16 @@
  * RentFlow WhatsApp Bot Server
  * ─────────────────────────────────────────────────────────────────────────────
  * Receives WhatsApp messages from Twilio (text, images, voice notes).
- * Uses OpenAI to parse a listing from a landlord's message/voice note.
+ * Uses an LLM (Groq free tier, or OpenAI) to parse a listing from a landlord's message/voice note.
  * Returns the parsed listing as JSON + a Twilio TwiML reply.
  *
  * ENV vars needed:
  *   TWILIO_ACCOUNT_SID       — from console.twilio.com
  *   TWILIO_AUTH_TOKEN        — from console.twilio.com
  *   TWILIO_WHATSAPP_NUMBER   — e.g. whatsapp:+14155238886 (Twilio Sandbox)
- *   OPENAI_API_KEY           — from platform.openai.com
+ *   GROQ_API_KEY             — free at console.groq.com (preferred), or
+ *   OPENAI_API_KEY           — from platform.openai.com (used when GROQ_API_KEY is unset)
+ *   AI_CHAT_MODEL / AI_TRANSCRIBE_MODEL — optional model overrides
  *   BOT_SECRET               — any random string, used to auth /api/bot/* calls
  *
  * Twilio Webhook URL to set in Twilio Sandbox:
@@ -30,13 +32,21 @@ app.use(cors({ origin: '*' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-// ── OpenAI client ────────────────────────────────────────────────────────────
+// ── AI client ────────────────────────────────────────────────────────────────
+// Groq's API is OpenAI-compatible, so the same SDK talks to either provider.
+const useGroq = !!process.env.GROQ_API_KEY;
+const aiConfigured = useGroq || !!process.env.OPENAI_API_KEY;
+const CHAT_MODEL = process.env.AI_CHAT_MODEL ?? (useGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini');
+const TRANSCRIBE_MODEL = process.env.AI_TRANSCRIBE_MODEL ?? (useGroq ? 'whisper-large-v3-turbo' : 'whisper-1');
+
 // Created lazily so the server still boots (and serves the admin API) without a key.
-let openaiClient: OpenAI | null = null;
-function openai(): OpenAI {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not set');
-  openaiClient ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return openaiClient;
+let aiClient: OpenAI | null = null;
+function ai(): OpenAI {
+  if (!aiConfigured) throw new Error('GROQ_API_KEY or OPENAI_API_KEY not set');
+  aiClient ??= useGroq
+    ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' })
+    : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return aiClient;
 }
 
 // ── Twilio client ────────────────────────────────────────────────────────────
@@ -85,8 +95,8 @@ If message is in Nigerian Pidgin/Yoruba/Igbo/Hausa, translate and extract accord
 
 // ── Parse listing from text ───────────────────────────────────────────────────
 async function parseListingFromText(text: string): Promise<Omit<PendingListing, 'id' | 'from' | 'mediaUrls' | 'rawMessage' | 'parsedAt' | 'status'>> {
-  const completion = await openai().chat.completions.create({
-    model: 'gpt-4o-mini',
+  const completion = await ai().chat.completions.create({
+    model: CHAT_MODEL,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: text },
@@ -128,9 +138,9 @@ async function transcribeAudio(mediaUrl: string, twilioSid: string, twilioToken:
   const blob = new Blob([arrayBuf], { type: 'audio/ogg' });
   const file = new File([blob], 'voice.ogg', { type: 'audio/ogg' });
 
-  const transcription = await openai().audio.transcriptions.create({
+  const transcription = await ai().audio.transcriptions.create({
     file,
-    model: 'whisper-1',
+    model: TRANSCRIBE_MODEL,
     language: 'en', // Whisper auto-detects Nigerian languages well
   });
 
@@ -166,7 +176,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
 
     // If a voice note is attached, transcribe it first
     const voiceIndex = mediaTypes.findIndex(t => t.startsWith('audio/'));
-    if (voiceIndex !== -1 && process.env.OPENAI_API_KEY && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    if (voiceIndex !== -1 && aiConfigured && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
       try {
         const transcript = await transcribeAudio(
           mediaUrls[voiceIndex],
@@ -283,7 +293,8 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     env: {
       twilio: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
-      openai: !!process.env.OPENAI_API_KEY,
+      openai: aiConfigured,
+      aiProvider: aiConfigured ? (useGroq ? 'groq' : 'openai') : null,
       botSecret: !!process.env.BOT_SECRET,
     },
   });
@@ -292,7 +303,8 @@ app.get('/api/health', (_req, res) => {
 app.listen(PORT, () => {
   console.log(`[RentFlow Bot] Server running on port ${PORT}`);
   console.log(`[RentFlow Bot] Webhook URL: http://localhost:${PORT}/api/whatsapp/incoming`);
-  if (!process.env.OPENAI_API_KEY) console.warn('[RentFlow Bot] WARNING: OPENAI_API_KEY not set');
+  if (!aiConfigured) console.warn('[RentFlow Bot] WARNING: neither GROQ_API_KEY nor OPENAI_API_KEY is set');
+  else console.log(`[RentFlow Bot] AI provider: ${useGroq ? 'Groq' : 'OpenAI'} (${CHAT_MODEL}, ${TRANSCRIBE_MODEL})`);
   if (!process.env.TWILIO_ACCOUNT_SID) console.warn('[RentFlow Bot] WARNING: TWILIO_ACCOUNT_SID not set');
 });
 
