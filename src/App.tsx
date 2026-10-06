@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Building2, Search, Home } from 'lucide-react';
 import AuthGate from '@/components/AuthGate';
+import LanguageWelcome from '@/components/LanguageWelcome';
 import Header from '@/components/Header';
 import TabBar, { type Tab } from '@/components/TabBar';
 import BrowseListings from '@/components/BrowseListings';
@@ -22,7 +23,7 @@ type Role = 'tenant' | 'landlord';
 const springs = { gentle: { type: 'spring', stiffness: 280, damping: 26 } as const };
 
 export default function App() {
-  const { t } = useLang();
+  const { t, chosen: langChosen } = useLang();
   const [account, setAccount] = useState<SmartAccount | null>(null);
   const [address, setAddress] = useState('');
   const [role, setRole] = useState<Role | null>(null);
@@ -55,6 +56,7 @@ export default function App() {
     } catch { toast.error('Could not withdraw.'); }
   }
 
+  if (!langChosen) return <LanguageWelcome />;
   if (!account) return <AuthGate onAuth={handleAuth} />;
 
   // ── Role picker ───────────────────────────────────────────────────────────────
