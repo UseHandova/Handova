@@ -96,9 +96,10 @@ export default function WhatsAppInbox({ account }: Props) {
         paymaster: true,
       });
       await bundlerClient.waitForUserOperationReceipt({ hash });
-      await fetch(`/api/bot/draft/${draft.code}/published`, { method: 'POST' }).catch(() => undefined);
+      const done = await fetch(`/api/bot/draft/${draft.code}/published`, { method: 'POST' })
+        .then(r => r.json() as Promise<{ notified?: boolean }>).catch(() => ({ notified: false }));
       await refreshChain();
-      toast.success('Your property is live! We sent you a WhatsApp confirmation.');
+      toast.success(done.notified ? 'Your property is live! We sent you a WhatsApp confirmation.' : 'Your property is live! Tenants can find it now.');
       setSubmitted(''); setCode('');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
