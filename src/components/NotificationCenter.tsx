@@ -1,108 +1,138 @@
 /**
- * NotificationCenter — in-app notification bell with alerts panel.
- * Push/email alerts for: rent due, new listing match, inspection confirmed, escrow funded.
- * Persisted to localStorage. Bell badge shows unread count.
+ * NotificationCenter — bell + panel built from live escrow state for the signed-in address.
+ * Each notification's id encodes the state it describes, so a change shows up as new.
+ * Read / dismissed ids are remembered per browser.
  */
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, CheckCircle2, Home, Calendar, ShieldCheck, Zap } from 'lucide-react';
+import { Bell, X, CheckCircle2, Key, ShieldCheck, Zap, AlertTriangle, Wallet, Clock } from 'lucide-react';
 import { useLang } from '@/lib/LangContext';
+import { EscrowStatus } from '@/lib/contracts';
+import { formatNaira } from '@/lib/naira';
+import {
+  formatCountdown, sameAddress, useChainState, useNow, usePendingWithdrawal,
+  DEPOSIT_REVIEW_MS, MOVE_IN_WINDOW_MS, type ChainEscrow,
+} from '@/lib/chain';
 
-export interface Notification {
+type Kind = 'escrow' | 'keys' | 'review' | 'dispute' | 'money' | 'done';
+
+interface Notification {
   id: string;
-  type: 'rent_due' | 'new_listing' | 'inspection' | 'escrow';
+  type: Kind;
   title: string;
   body: string;
-  read: boolean;
   createdAt: number;
 }
 
-const STORAGE_KEY = 'rentflow_notifications';
-
-const TYPE_ICONS: Record<Notification['type'], React.ElementType> = {
-  rent_due: Calendar,
-  new_listing: Home,
-  inspection: CheckCircle2,
-  escrow: ShieldCheck,
+const TYPE_ICONS: Record<Kind, React.ElementType> = {
+  escrow: ShieldCheck, keys: Key, review: Clock, dispute: AlertTriangle, money: Wallet, done: CheckCircle2,
 };
 
-const TYPE_COLORS: Record<Notification['type'], string> = {
-  rent_due: '#f59e0b',
-  new_listing: 'var(--accent)',
-  inspection: 'var(--success)',
-  escrow: '#7c3aed',
+const TYPE_COLORS: Record<Kind, string> = {
+  escrow: '#7c3aed', keys: 'var(--accent)', review: '#f59e0b', dispute: '#ef4444', money: 'var(--success)', done: 'var(--success)',
 };
 
-function seedDemoNotifications(): Notification[] {
-  return [
-    {
-      id: 'n1', type: 'rent_due',
-      title: 'Rent Due Soon',
-      body: 'Your lease at Lekki Phase 1 is due in 7 days. Ensure your wallet has enough USDC.',
-      read: false, createdAt: Date.now() - 3600000,
-    },
-    {
-      id: 'n2', type: 'new_listing',
-      title: 'New Match in Yaba',
-      body: 'A new 2-bedroom flat in Yaba matches your saved search. ₦128,000/mo.',
-      read: false, createdAt: Date.now() - 7200000,
-    },
-    {
-      id: 'n3', type: 'inspection',
-      title: 'Inspection Confirmed',
-      body: 'Your inspection at Victoria Island has been confirmed for tomorrow.',
-      read: true, createdAt: Date.now() - 86400000,
-    },
-    {
-      id: 'n4', type: 'escrow',
-      title: 'Escrow Funded',
-      body: 'Your escrow for Ikeja GRA property is now active. Confirm move-in to release rent.',
-      read: true, createdAt: Date.now() - 172800000,
-    },
-  ];
+const SEEN_KEY = 'rentflow_notifications_seen';
+const HIDDEN_KEY = 'rentflow_notifications_hidden';
+
+function loadSet(key: string): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(key) ?? '[]') as string[]); } catch { return new Set(); }
+}
+function saveSet(key: string, set: Set<string>) {
+  try { localStorage.setItem(key, JSON.stringify([...set].slice(-300))); } catch { /* storage unavailable */ }
 }
 
-function loadNotifications(): Notification[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Notification[];
-  } catch { /* ignore */ }
-  return seedDemoNotifications();
+const place = (e: ChainEscrow) => e.listing?.meta.location || `listing #${e.listingId}`;
+
+function tenantNotice(e: ChainEscrow, now: number): Notification | null {
+  const at = (n: number) => n || e.createdAt;
+  const id = (s: string) => `t-${e.id}-${s}`;
+  switch (e.status) {
+    case EscrowStatus.Pending:
+      return e.handoverAt
+        ? { id: id('handover'), type: 'keys', title: 'Keys handed over', body: `Your landlord at ${place(e)} says you have the keys. Confirm move-in within ${formatCountdown(e.handoverAt + MOVE_IN_WINDOW_MS, now)}, or raise a dispute.`, createdAt: e.handoverAt }
+        : { id: id('paid'), type: 'escrow', title: 'Rent safe in escrow', body: `Your payment for ${place(e)} is held by the contract. Confirm move-in once you get the keys.`, createdAt: e.createdAt };
+    case EscrowStatus.Active:
+      return { id: id('active'), type: 'done', title: 'Lease active', body: `You moved into ${place(e)}. Your lease certificate NFT is in your wallet.`, createdAt: e.createdAt };
+    case EscrowStatus.Ending: {
+      const due = e.endRequestedAt + DEPOSIT_REVIEW_MS;
+      return now >= due
+        ? { id: id('claim'), type: 'money', title: 'Deposit ready', body: `The review for ${place(e)} is over. Claim your deposit in My Leases.`, createdAt: due }
+        : { id: id('review'), type: 'review', title: 'Deposit under review', body: `Your landlord is inspecting ${place(e)}. If they don't dispute, you can claim your deposit in ${formatCountdown(due, now)}.`, createdAt: at(e.endRequestedAt) };
+    }
+    case EscrowStatus.Disputed:
+      return { id: id('dispute'), type: 'dispute', title: 'Dispute open', body: `The tenancy at ${place(e)} is in dispute. Upload your evidence so the RentFlow team can decide.`, createdAt: at(e.disputedAt) };
+    default:
+      return { id: id('closed'), type: 'done', title: 'Tenancy closed', body: `Your tenancy at ${place(e)} is settled. Any money owed to you is ready to withdraw.`, createdAt: e.createdAt };
+  }
 }
 
-function saveNotifications(notifs: Notification[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(notifs)); } catch { /* ignore */ }
+function landlordNotice(e: ChainEscrow, now: number): Notification | null {
+  const id = (s: string) => `l-${e.id}-${s}`;
+  switch (e.status) {
+    case EscrowStatus.Pending:
+      if (!e.handoverAt) return { id: id('paid'), type: 'escrow', title: 'A tenant has paid', body: `Rent for ${place(e)} is in escrow. Hand over the keys, then tap "Keys handed over".`, createdAt: e.createdAt };
+      return now >= e.handoverAt + MOVE_IN_WINDOW_MS
+        ? { id: id('claimable'), type: 'keys', title: 'Finalise move-in', body: `The tenant at ${place(e)} hasn't responded. You can finalise the move-in and receive the rent.`, createdAt: e.handoverAt + MOVE_IN_WINDOW_MS }
+        : null;
+    case EscrowStatus.Active:
+      return { id: id('active'), type: 'money', title: 'Rent released', body: `Your tenant moved into ${place(e)}. The rent is ready to withdraw.`, createdAt: e.createdAt };
+    case EscrowStatus.Ending:
+      return now < e.endRequestedAt + DEPOSIT_REVIEW_MS
+        ? { id: id('review'), type: 'review', title: 'Tenant moved out', body: `Inspect ${place(e)} within ${formatCountdown(e.endRequestedAt + DEPOSIT_REVIEW_MS, now)}: return the deposit or dispute it.`, createdAt: e.endRequestedAt }
+        : null;
+    case EscrowStatus.Disputed:
+      return { id: id('dispute'), type: 'dispute', title: 'Dispute open', body: `The tenancy at ${place(e)} is in dispute. Upload your evidence so the RentFlow team can decide.`, createdAt: e.disputedAt || e.createdAt };
+    default:
+      return null;
+  }
 }
 
-function timeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60000);
+function timeAgo(ts: number, now: number): string {
+  const m = Math.floor((now - ts) / 60000);
+  if (m < 1) return 'just now';
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
 
-export default function NotificationCenter() {
+export default function NotificationCenter({ address }: { address: string }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
-  const [notifs, setNotifs] = useState<Notification[]>(() => loadNotifications());
+  const [seen, setSeen] = useState(() => loadSet(SEEN_KEY));
+  const [hidden, setHidden] = useState(() => loadSet(HIDDEN_KEY));
+  const chain = useChainState();
+  const pending = usePendingWithdrawal(address).data ?? 0;
+  const now = useNow();
 
-  const unread = notifs.filter(n => !n.read).length;
+  const notifs = useMemo(() => {
+    const list: Notification[] = [];
+    for (const e of chain.data?.escrows ?? []) {
+      const n = sameAddress(e.tenant, address) ? tenantNotice(e, now)
+        : sameAddress(e.listing?.landlord, address) ? landlordNotice(e, now)
+        : null;
+      if (n) list.push(n);
+    }
+    if (pending > 0) {
+      list.push({ id: `money-${pending}`, type: 'money', title: 'Money to withdraw', body: `You have ${formatNaira(pending)} ready. Tap Withdraw at the top to move it to your wallet.`, createdAt: now });
+    }
+    return list.filter(n => !hidden.has(n.id)).sort((a, b) => b.createdAt - a.createdAt);
+  }, [chain.data, address, pending, hidden, now]);
 
-  useEffect(() => { saveNotifications(notifs); }, [notifs]);
+  const unread = notifs.filter(n => !seen.has(n.id)).length;
 
   function markRead(id: string) {
-    setNotifs(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    setSeen(prev => { const next = new Set(prev).add(id); saveSet(SEEN_KEY, next); return next; });
   }
 
   function markAllRead() {
-    setNotifs(prev => prev.map(n => ({ ...n, read: true })));
+    setSeen(prev => { const next = new Set([...prev, ...notifs.map(n => n.id)]); saveSet(SEEN_KEY, next); return next; });
   }
 
   function dismiss(id: string) {
-    setNotifs(prev => prev.filter(n => n.id !== id));
+    setHidden(prev => { const next = new Set(prev).add(id); saveSet(HIDDEN_KEY, next); return next; });
   }
 
   return (
@@ -137,13 +167,11 @@ export default function NotificationCenter() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-              className="absolute right-0 top-12 w-80 max-h-[480px] overflow-y-auto rounded-3xl z-50"
+              className="absolute right-0 top-12 w-80 max-w-[calc(100vw-2rem)] max-h-[480px] overflow-y-auto rounded-3xl z-50"
               style={{
-                background: 'var(--glass-card)',
-                backdropFilter: 'blur(32px)',
-                WebkitBackdropFilter: 'blur(32px)',
-                border: '1px solid var(--glass-border)',
-                boxShadow: '0 16px 48px rgba(0,0,0,0.18)',
+                background: 'var(--popover)',
+                border: '1px solid var(--border)',
+                boxShadow: '0 16px 48px rgba(0,0,0,0.35)',
               }}
             >
               {/* Header */}
@@ -176,7 +204,7 @@ export default function NotificationCenter() {
                         exit={{ opacity: 0, height: 0 }}
                         onClick={() => markRead(n.id)}
                         className="px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors hover:bg-[var(--accent-soft)]"
-                        style={{ background: n.read ? 'transparent' : 'rgba(10,102,56,0.04)' }}
+                        style={{ background: seen.has(n.id) ? 'transparent' : 'var(--accent-soft)' }}
                       >
                         <div className="w-8 h-8 rounded-xl shrink-0 flex items-center justify-center mt-0.5"
                           style={{ background: `${TYPE_COLORS[n.type]}20` }}>
@@ -185,7 +213,7 @@ export default function NotificationCenter() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-0.5">
                             <p className="text-xs font-semibold truncate" style={{ color: 'var(--ink)' }}>{n.title}</p>
-                            <span className="text-[10px] shrink-0" style={{ color: 'var(--subtle)' }}>{timeAgo(n.createdAt)}</span>
+                            <span className="text-[10px] shrink-0" style={{ color: 'var(--subtle)' }}>{timeAgo(n.createdAt, now)}</span>
                           </div>
                           <p className="text-[11px] leading-relaxed" style={{ color: 'var(--muted)' }}>{n.body}</p>
                         </div>

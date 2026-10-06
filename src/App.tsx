@@ -26,7 +26,8 @@ export default function App() {
   const { t, chosen: langChosen } = useLang();
   const [account, setAccount] = useState<SmartAccount | null>(null);
   const [address, setAddress] = useState('');
-  const [role, setRole] = useState<Role | null>(null);
+  // A WhatsApp claim link (?wa=123456) is always for a landlord.
+  const [role, setRole] = useState<Role | null>(() => (new URLSearchParams(window.location.search).has('wa') ? 'landlord' : null));
   const [tab, setTab] = useState<Tab>('browse');
   const pendingUsdc = usePendingWithdrawal(address).data ?? 0;
   const refreshChain = useRefreshChain();

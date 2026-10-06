@@ -4,6 +4,7 @@
 
 /* ─── Arc Light (default) ───────────────────────────────────────────────── */
 :root {
+  --popover: #ffffff;
   --bg: #ffffff;
   --bg-gradient: linear-gradient(160deg, #f4fbf7 0%, #fffcf7 48%, #f3f8f4 100%);
   --surface: rgba(255, 255, 255, 0.68);
@@ -31,6 +32,7 @@
 
 /* ─── Arc Dark ──────────────────────────────────────────────────────────── */
 .dark {
+  --popover: #132a1d;
   --bg: #0a1a10;
   --bg-gradient: linear-gradient(160deg, #0a1a10 0%, #0d2018 48%, #091610 100%);
   --surface: rgba(255, 255, 255, 0.06);

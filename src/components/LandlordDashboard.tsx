@@ -65,7 +65,7 @@ const springs = {
 
 export default function LandlordDashboard({ account }: Props) {
   const [view, setView] = useState<View>('home');
-  const [dashTab, setDashTab] = useState<DashTab>('listings');
+  const [dashTab, setDashTab] = useState<DashTab>(() => (new URLSearchParams(window.location.search).has('wa') ? 'whatsapp' : 'listings'));
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const { t } = useLang();

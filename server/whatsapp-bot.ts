@@ -12,7 +12,12 @@
  *   GROQ_API_KEY             — free at console.groq.com (preferred), or
  *   OPENAI_API_KEY           — from platform.openai.com (used when GROQ_API_KEY is unset)
  *   AI_CHAT_MODEL / AI_TRANSCRIBE_MODEL — optional model overrides
- *   BOT_SECRET               — any random string, used to auth /api/bot/* calls
+ *   BOT_SECRET               — any random string, used to auth the admin /api/bot/* calls
+ *   APP_URL                  — optional public app URL; replies include a tap-to-claim link
+ *
+ * Flow: landlord messages the bot → AI parses a draft → bot replies with a 6-digit claim code →
+ * landlord enters the code in the app (or taps the link) and publishes from their OWN wallet,
+ * so they are the onchain owner and receive the rent.
  *
  * Twilio Webhook URL to set in Twilio Sandbox:
  *   https://<your-preview-hostname>/api/whatsapp/incoming
@@ -59,6 +64,7 @@ const twilioClient = twilio(
 // In production, replace with a real database.
 interface PendingListing {
   id: string;
+  code: string;          // 6-digit claim code sent to the landlord on WhatsApp
   from: string;          // WhatsApp phone number
   location: string;
   rooms: number;
@@ -73,6 +79,41 @@ interface PendingListing {
 }
 
 const pendingListings: PendingListing[] = [];
+
+function newClaimCode(): string {
+  for (;;) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    if (!pendingListings.some(l => l.code === code && l.status === 'pending')) return code;
+  }
+}
+
+// Claim codes are the only credential for /api/bot/draft — throttle guessing per IP.
+const failedLookups = new Map<string, { count: number; resetAt: number }>();
+function tooManyFailures(ip: string): boolean {
+  const entry = failedLookups.get(ip);
+  return !!entry && entry.resetAt > Date.now() && entry.count >= 20;
+}
+function recordFailure(ip: string) {
+  const now = Date.now();
+  const entry = failedLookups.get(ip);
+  if (!entry || entry.resetAt < now) failedLookups.set(ip, { count: 1, resetAt: now + 10 * 60_000 });
+  else entry.count++;
+}
+
+/** Draft as shown to the landlord — never exposes the sender's full phone number. */
+function publicDraft(l: PendingListing) {
+  return {
+    code: l.code,
+    location: l.location,
+    rooms: l.rooms,
+    rentNgn: l.rentNgn,
+    depositNgn: l.depositNgn,
+    description: l.description,
+    amenities: l.amenities,
+    phoneHint: l.from.replace(/^whatsapp:/, '').replace(/\d(?=\d{3})/g, '•'),
+    status: l.status,
+  };
+}
 
 // ── System prompt for listing extraction ─────────────────────────────────────
 const SYSTEM_PROMPT = `You are RentFlow AI assistant helping Lagos landlords list their properties.
@@ -215,6 +256,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     // Store in pending queue
     const listing: PendingListing = {
       id: Math.random().toString(36).slice(2),
+      code: newClaimCode(),
       from,
       ...parsed,
       mediaUrls: mediaUrls.filter((_, i) => mediaTypes[i]?.startsWith('image/')),
@@ -227,7 +269,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     // Send confirmation back to landlord
     const rentFormatted = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(parsed.rentNgn);
     const replyMsg = parsed.rentNgn > 0
-      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n\nYour listing is pending review. Open the RentFlow app to confirm and publish it onchain.`
+      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n\n🔑 Your RentFlow code: *${listing.code}*\n${process.env.APP_URL ? `Tap to publish: ${process.env.APP_URL.replace(/\/$/, '')}/?wa=${listing.code}` : 'Open RentFlow → Landlord → WhatsApp and enter this code to publish it.'}`
       : `I received your message but couldn't find the rent amount. Please reply with: location, rooms, and rent. E.g. "2 bed Yaba 600k per year"`;
 
     res.set('Content-Type', 'text/xml').send(twimlReply(replyMsg));
@@ -239,7 +281,32 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
   }
 });
 
-// ── GET /api/bot/pending — fetch pending listings (app calls this) ─────────────
+// ── GET /api/bot/draft/:code — landlord fetches their own draft by claim code ──
+app.get('/api/bot/draft/:code', (req, res) => {
+  const ip = req.ip ?? 'unknown';
+  if (tooManyFailures(ip)) { res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' }); return; }
+  const listing = pendingListings.find(l => l.code === req.params.code && l.status === 'pending');
+  if (!listing) { recordFailure(ip); res.status(404).json({ error: 'Code not found or already used.' }); return; }
+  res.json(publicDraft(listing));
+});
+
+// ── POST /api/bot/draft/:code/published — landlord published it onchain ───────
+app.post('/api/bot/draft/:code/published', (req, res) => {
+  const listing = pendingListings.find(l => l.code === req.params.code && l.status === 'pending');
+  if (!listing) { res.status(404).json({ error: 'Code not found or already used.' }); return; }
+  listing.status = 'published';
+  if (process.env.TWILIO_WHATSAPP_NUMBER && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    twilioClient.messages.create({
+      from: process.env.TWILIO_WHATSAPP_NUMBER,
+      to: listing.from,
+      body: `🎉 Your property in ${listing.location} is now LIVE on RentFlow! Tenants can find it directly — no agent fee.`,
+    }).catch((err: unknown) => console.error('[RentFlow Bot] Confirmation message failed:', err instanceof Error ? err.message : err));
+  }
+  res.json({ ok: true });
+});
+
+// ── Admin moderation (requires BOT_SECRET; not called from the browser) ───────
+// ── GET /api/bot/pending — fetch pending listings (admin only) ─────────────
 app.get('/api/bot/pending', (req, res) => {
   const secret = req.headers['x-bot-secret'];
   if (secret !== process.env.BOT_SECRET) {

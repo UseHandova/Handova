@@ -1,95 +1,108 @@
 /**
- * WhatsAppInbox — shown in the Landlord Dashboard.
- * Polls /api/bot/pending for listings sent via the WhatsApp bot.
- * Landlord can approve (publish onchain) or reject each one.
+ * WhatsAppInbox — "List by WhatsApp" for landlords.
+ * 1. Landlord sends house details (text or voice note) to the RentFlow WhatsApp bot.
+ * 2. The bot replies with a 6-digit code (and a tap-to-open link when APP_URL is set).
+ * 3. Landlord enters the code here, checks the details and publishes from their own wallet —
+ *    so they own the listing onchain and receive the rent.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, Check, X, Loader2, MapPin, BedDouble, RefreshCw, Phone } from 'lucide-react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
+import { MessageCircle, Loader2, MapPin, BedDouble, Check, KeyRound, ExternalLink } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
+import { encodeFunctionData } from 'viem';
 import { toast } from 'sonner';
 import { formatNaira, nairaToUsdc } from '@/lib/naira';
 import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
 import { bundlerClient } from '@/lib/wallet';
-import { encodeFunctionData } from 'viem';
-import { useLang } from '@/lib/LangContext';
+import { useRefreshChain } from '@/lib/chain';
 
-interface BotListing {
-  id: string;
-  from: string;
+interface Draft {
+  code: string;
   location: string;
   rooms: number;
   rentNgn: number;
   depositNgn: number;
   description: string;
   amenities: string[];
-  mediaUrls: string[];
-  rawMessage: string;
-  parsedAt: number;
-  status: 'pending' | 'published' | 'rejected';
+  phoneHint: string;
 }
 
 interface Props {
   account: SmartAccount;
 }
 
-const BOT_SECRET: string = (import.meta.env.VITE_BOT_SECRET as string | undefined) ?? '';
+const BOT_NUMBER = ((import.meta.env.VITE_WHATSAPP_BOT_NUMBER as string | undefined) ?? '').replace(/\D/g, '');
+const JOIN_CODE = (import.meta.env.VITE_WHATSAPP_JOIN_CODE as string | undefined) ?? '';
+
+/** Read a claim code from ?wa=123456 (the link the bot sends), then drop it from the URL. */
+function takeCodeFromUrl(): string {
+  try {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('wa') ?? '';
+    if (code) {
+      url.searchParams.delete('wa');
+      window.history.replaceState(null, '', url.toString());
+    }
+    return /^\d{6}$/.test(code) ? code : '';
+  } catch {
+    return '';
+  }
+}
 
 export default function WhatsAppInbox({ account }: Props) {
-  const { t } = useLang();
-  const [listings, setListings] = useState<BotListing[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [publishing, setPublishing] = useState<string | null>(null);
-  const [botConfigured, setBotConfigured] = useState(true);
+  const [initialCode] = useState(takeCodeFromUrl);
+  const [code, setCode] = useState(initialCode);
+  // The code being looked up; set on "Find" (or straight away when arriving via the bot's link).
+  const [submitted, setSubmitted] = useState(initialCode);
+  const [publishing, setPublishing] = useState(false);
+  const refreshChain = useRefreshChain();
 
-  const fetchPending = useCallback(async () => {
-    setLoading(true);
+  const lookup = useQuery({
+    queryKey: ['wa-draft', submitted],
+    enabled: submitted.length === 6,
+    retry: false,
+    staleTime: Infinity,
+    queryFn: async () => {
+      let res: Response;
+      try { res = await fetch(`/api/bot/draft/${submitted}`); } catch {
+        throw new Error('Could not reach the RentFlow WhatsApp service. Please try again.');
+      }
+      const body = await res.json().catch(() => ({})) as Draft & { error?: string };
+      if (!res.ok) throw new Error(body.error ?? 'Could not find that code.');
+      return body;
+    },
+  });
+  const draft = submitted ? lookup.data ?? null : null;
+  const looking = lookup.isFetching;
+  const error = submitted && lookup.error ? lookup.error.message : '';
+
+  function find() {
+    if (code === submitted) void lookup.refetch();
+    else setSubmitted(code);
+  }
+
+  async function publish() {
+    if (!draft) return;
+    if (!ESCROW_ADDRESS) { toast.error('Contract not deployed yet.'); return; }
+    setPublishing(true);
     try {
-      const res = await fetch('/api/bot/pending', {
-        headers: { 'x-bot-secret': BOT_SECRET },
-      });
-      if (res.status === 401) { setBotConfigured(false); return; }
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json() as BotListing[];
-      setListings(data);
-      setBotConfigured(true);
-    } catch {
-      setBotConfigured(false);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchPending();
-    // Poll every 30s
-    const id = setInterval(() => { void fetchPending(); }, 30_000);
-    return () => clearInterval(id);
-  }, [fetchPending]);
-
-  async function handleApprove(listing: BotListing) {
-    if (!ESCROW_ADDRESS) {
-      toast.error('Contract not deployed yet.');
-      return;
-    }
-    setPublishing(listing.id);
-    try {
-      // 1. Publish onchain
-      const rentRaw = parseAmount(5042002, nairaToUsdc(listing.rentNgn).toFixed(6)).raw;
-      const depositRaw = parseAmount(5042002, nairaToUsdc(listing.depositNgn).toFixed(6)).raw;
-      const metadata = JSON.stringify({
-        location: listing.location,
-        rooms: listing.rooms,
-        description: listing.description,
-        amenities: listing.amenities,
-        source: 'whatsapp',
-      });
       const calldata = encodeFunctionData({
         abi: ESCROW_ABI,
         functionName: 'createListing',
-        args: [rentRaw, depositRaw, metadata],
+        args: [
+          parseAmount(5042002, nairaToUsdc(draft.rentNgn).toFixed(6)).raw,
+          parseAmount(5042002, nairaToUsdc(draft.depositNgn).toFixed(6)).raw,
+          JSON.stringify({
+            location: draft.location,
+            rooms: draft.rooms,
+            description: draft.description,
+            amenities: draft.amenities,
+            source: 'whatsapp',
+          }),
+        ],
       });
       const hash = await bundlerClient.sendUserOperation({
         account,
@@ -97,228 +110,115 @@ export default function WhatsAppInbox({ account }: Props) {
         paymaster: true,
       });
       await bundlerClient.waitForUserOperationReceipt({ hash });
-
-      // 2. Notify bot server to send WhatsApp confirmation
-      await fetch('/api/bot/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-bot-secret': BOT_SECRET },
-        body: JSON.stringify({ id: listing.id }),
-      });
-
-      setListings(prev => prev.filter(l => l.id !== listing.id));
-      toast.success(`Listed onchain! Landlord notified via WhatsApp.`);
+      await fetch(`/api/bot/draft/${draft.code}/published`, { method: 'POST' }).catch(() => undefined);
+      await refreshChain();
+      toast.success('Your property is live! We sent you a WhatsApp confirmation.');
+      setSubmitted(''); setCode('');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes('NotAllowedError')) toast.error('Failed to publish listing.');
+      toast.error(msg.includes('NotAllowedError') ? 'Passkey cancelled.' : 'Could not publish. Please try again.');
     } finally {
-      setPublishing(null);
+      setPublishing(false);
     }
   }
 
-  async function handleReject(listing: BotListing) {
-    await fetch('/api/bot/reject', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-bot-secret': BOT_SECRET },
-      body: JSON.stringify({ id: listing.id }),
-    });
-    setListings(prev => prev.filter(l => l.id !== listing.id));
-    toast.info('Listing rejected.');
-  }
+  const waLink = BOT_NUMBER
+    ? `https://wa.me/${BOT_NUMBER}?text=${encodeURIComponent(JOIN_CODE || '2 bedroom flat in Yaba, 800k per year, generator and borehole')}`
+    : '';
 
-  // Bot not configured yet
-  if (!botConfigured) {
-    return (
-      <div
-        className="rounded-2xl p-5 text-sm"
-        style={{ background: 'var(--surface-muted)', border: '1px dashed var(--border)' }}
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <MessageCircle className="w-5 h-5" style={{ color: 'var(--accent)' }} />
-          <span className="font-semibold" style={{ color: 'var(--ink)' }}>
-            {t('whatsapp_bot_section')}
-          </span>
-        </div>
-        <p className="text-xs mb-3" style={{ color: 'var(--muted)' }}>
-          {t('whatsapp_bot_desc')}
-        </p>
-        <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: 'var(--surface-strong)', border: '1px solid var(--border)' }}>
-          <p className="font-semibold" style={{ color: 'var(--ink)' }}>Setup required — add to .env:</p>
-          <p className="mono" style={{ color: 'var(--muted)' }}>TWILIO_ACCOUNT_SID=ACxxxxxxxx</p>
-          <p className="mono" style={{ color: 'var(--muted)' }}>TWILIO_AUTH_TOKEN=xxxxxxxx</p>
-          <p className="mono" style={{ color: 'var(--muted)' }}>TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886</p>
-          <p className="mono" style={{ color: 'var(--muted)' }}>OPENAI_API_KEY=sk-xxxx</p>
-          <p className="mono" style={{ color: 'var(--muted)' }}>VITE_BOT_SECRET=any-random-string</p>
-          <p className="mono" style={{ color: 'var(--muted)' }}>BOT_SECRET=same-string-as-above</p>
-        </div>
-        <p className="text-xs mt-3" style={{ color: 'var(--muted)' }}>
-          Then run: <span className="mono">bun run server</span> — and set Twilio Sandbox webhook to your tunnel URL + <span className="mono">/api/whatsapp/incoming</span>
-        </p>
-      </div>
-    );
-  }
+  const card = { background: 'var(--glass-card)', border: '1px solid var(--glass-border)', boxShadow: 'var(--shadow-card)' };
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center"
-            style={{ background: '#25D366', boxShadow: '0 2px 8px rgba(37,211,102,0.3)' }}
-          >
-            <MessageCircle className="w-4 h-4 text-white" />
+    <div className="space-y-4">
+      {/* Step 1 — send details */}
+      <div className="rounded-3xl p-5" style={card}>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0" style={{ background: '#25D366' }}>
+            <MessageCircle className="w-5 h-5 text-white" />
           </div>
           <div>
-            <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>
-              {t('whatsapp_bot_section')}
-            </p>
-            <p className="text-[10px]" style={{ color: 'var(--muted)' }}>
-              {listings.length} pending review
-            </p>
+            <p className="font-bold text-sm" style={{ color: 'var(--ink)' }}>List your house on WhatsApp</p>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>Type it or send a voice note — any language.</p>
           </div>
         </div>
-        <button
-          onClick={() => { void fetchPending(); }}
-          disabled={loading}
-          className="w-8 h-8 rounded-xl flex items-center justify-center transition-opacity hover:opacity-70"
-          style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} style={{ color: 'var(--muted)' }} />
-        </button>
+        <p className="text-xs leading-relaxed mb-4" style={{ color: 'var(--muted)' }}>
+          Tell us the area, number of rooms, rent and caution fee. Example: <i>"2 bedroom flat for Yaba, 800k per year, caution 200k, borehole dey."</i>{' '}
+          We reply with a <b>6-digit code</b>.
+          {JOIN_CODE && <> First time? Send <b className="mono">{JOIN_CODE}</b> to connect.</>}
+        </p>
+        {waLink ? (
+          <a href={waLink} target="_blank" rel="noopener noreferrer"
+            className="w-full py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
+            style={{ background: '#25D366' }}>
+            Open WhatsApp <ExternalLink className="w-4 h-4" />
+          </a>
+        ) : (
+          <p className="text-xs" style={{ color: 'var(--subtle)' }}>Set VITE_WHATSAPP_BOT_NUMBER to show the WhatsApp button.</p>
+        )}
       </div>
 
-      {/* Empty state */}
-      {listings.length === 0 && !loading && (
-        <div
-          className="rounded-2xl p-6 flex flex-col items-center text-center"
-          style={{ background: 'var(--surface-muted)', border: '1px dashed var(--border)' }}
-        >
-          <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
-            style={{ background: '#25D366' }}
-          >
-            <Phone className="w-6 h-6 text-white" />
-          </div>
-          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--ink)' }}>
-            No pending listings
-          </p>
-          <p className="text-xs max-w-[200px]" style={{ color: 'var(--muted)' }}>
-            Landlords can send property details to your WhatsApp bot — they appear here for review.
-          </p>
+      {/* Step 2 — enter code */}
+      <div className="rounded-3xl p-5" style={card}>
+        <label className="flex items-center gap-2 font-bold text-sm mb-3" style={{ color: 'var(--ink)' }}>
+          <KeyRound className="w-4 h-4" style={{ color: 'var(--accent)' }} /> Enter the code from WhatsApp
+        </label>
+        <div className="flex gap-2">
+          <input
+            inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="123456"
+            value={code}
+            onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setSubmitted(''); }}
+            onKeyDown={e => { if (e.key === 'Enter' && code.length === 6) find(); }}
+            className="flex-1 min-w-0 px-4 py-3 rounded-xl border text-lg tracking-[0.3em] mono outline-none"
+            style={{ background: 'var(--surface-muted)', borderColor: 'var(--border)', color: 'var(--ink)' }}
+          />
+          <button
+            onClick={find}
+            disabled={code.length !== 6 || looking}
+            className="px-5 rounded-xl font-semibold text-sm text-white disabled:opacity-50"
+            style={{ background: 'var(--accent)' }}>
+            {looking ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Find'}
+          </button>
         </div>
-      )}
+        {error && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>{error}</p>}
+      </div>
 
-      {/* Listing cards */}
-      <AnimatePresence>
-        {listings.map((listing, i) => (
-          <motion.div
-            key={listing.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, x: -20, height: 0, marginBottom: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="rounded-2xl overflow-hidden mb-3"
-            style={{
-              background: 'var(--surface-strong)',
-              border: '1px solid var(--border)',
-            }}
-          >
-            {/* WhatsApp green top strip */}
-            <div className="h-1" style={{ background: 'linear-gradient(90deg, #25D366, #128C7E)' }} />
-
-            <div className="p-4">
-              {/* From + time */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center"
-                    style={{ background: '#25D366' }}
-                  >
-                    <Phone className="w-3 h-3 text-white" />
-                  </div>
-                  <span className="mono text-xs" style={{ color: 'var(--muted)' }}>
-                    {listing.from.replace('whatsapp:', '')}
-                  </span>
-                </div>
-                <span className="text-[10px]" style={{ color: 'var(--subtle)' }}>
-                  {new Date(listing.parsedAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-
-              {/* Parsed details */}
-              <div className="space-y-1 mb-3">
-                <div className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                  <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{listing.location}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <BedDouble className="w-3.5 h-3.5" style={{ color: 'var(--muted)' }} />
-                    <span className="text-xs" style={{ color: 'var(--muted)' }}>{listing.rooms} bed</span>
-                  </div>
-                  <span className="text-sm font-bold tabular-nums" style={{ color: 'var(--accent)' }}>
-                    {formatNaira(listing.rentNgn / 1600)}/yr
-                  </span>
-                </div>
-                {listing.description && (
-                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>{listing.description}</p>
-                )}
-              </div>
-
-              {/* Original message */}
-              {listing.rawMessage && (
-                <div
-                  className="rounded-xl p-2.5 mb-3 text-xs italic"
-                  style={{ background: 'var(--surface-muted)', borderLeft: '3px solid #25D366', color: 'var(--muted)' }}
-                >
-                  "{listing.rawMessage.slice(0, 120)}{listing.rawMessage.length > 120 ? '…' : ''}"
-                </div>
-              )}
-
-              {/* Amenities */}
-              {listing.amenities.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {listing.amenities.map(a => (
-                    <span
-                      key={a}
-                      className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                      style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
-                    >
-                      {a}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex gap-2">
-                <motion.button
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => { void handleApprove(listing); }}
-                  disabled={publishing === listing.id}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-1.5"
-                  style={{ background: publishing === listing.id ? 'var(--subtle)' : 'var(--success)' }}
-                >
-                  {publishing === listing.id
-                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    : <Check className="w-3.5 h-3.5" />
-                  }
-                  {publishing === listing.id ? 'Publishing…' : 'Publish'}
-                </motion.button>
-                <motion.button
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => { void handleReject(listing); }}
-                  disabled={publishing === listing.id}
-                  className="w-10 rounded-xl flex items-center justify-center"
-                  style={{ background: 'rgba(186,43,76,0.08)', border: '1px solid rgba(186,43,76,0.2)' }}
-                >
-                  <X className="w-4 h-4" style={{ color: 'var(--danger)' }} />
-                </motion.button>
-              </div>
+      {/* Step 3 — review + publish */}
+      {draft && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl p-5 space-y-3" style={card}>
+          <p className="text-xs" style={{ color: 'var(--subtle)' }}>Sent from {draft.phoneHint}</p>
+          <div className="flex flex-wrap gap-3 text-sm" style={{ color: 'var(--ink)' }}>
+            <span className="flex items-center gap-1"><MapPin className="w-4 h-4" style={{ color: 'var(--accent)' }} />{draft.location}</span>
+            <span className="flex items-center gap-1"><BedDouble className="w-4 h-4" style={{ color: 'var(--accent)' }} />{draft.rooms} bed</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-3 rounded-xl" style={{ background: 'var(--surface-muted)' }}>
+              <p className="text-xs" style={{ color: 'var(--subtle)' }}>Rent / year</p>
+              <p className="font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(nairaToUsdc(draft.rentNgn))}</p>
             </div>
-          </motion.div>
-        ))}
-      </AnimatePresence>
+            <div className="p-3 rounded-xl" style={{ background: 'var(--surface-muted)' }}>
+              <p className="text-xs" style={{ color: 'var(--subtle)' }}>Caution fee</p>
+              <p className="font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(nairaToUsdc(draft.depositNgn))}</p>
+            </div>
+          </div>
+          {draft.description && <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>{draft.description}</p>}
+          {draft.amenities.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {draft.amenities.map(a => (
+                <span key={a} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>{a}</span>
+              ))}
+            </div>
+          )}
+          {draft.rentNgn <= 0 ? (
+            <p className="text-xs" style={{ color: 'var(--danger)' }}>We couldn't read the rent. Send the details again on WhatsApp with the rent amount.</p>
+          ) : (
+            <button onClick={() => { void publish(); }} disabled={publishing}
+              className="w-full py-3.5 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
+              {publishing ? <><Loader2 className="w-4 h-4 animate-spin" /> Publishing…</> : <><Check className="w-4 h-4" /> This is correct — publish my house</>}
+            </button>
+          )}
+        </motion.div>
+      )}
     </div>
   );
 }
