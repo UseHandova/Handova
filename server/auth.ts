@@ -25,6 +25,8 @@ const secret = () => process.env.SESSION_SECRET
   || createHash('sha256').update(`rentflow-session:${process.env.VERIFIER_PRIVATE_KEY ?? process.env.BOT_SECRET ?? 'dev'}`).digest('hex');
 
 const sign = (payload: string) => createHmac('sha256', secret()).update(payload).digest('hex');
+/** HMAC with the server session secret, for other short-lived signed tokens. */
+export const serverHmac = sign;
 
 export function issueToken(address: Address, now = Date.now()) {
   const expiresAt = now + SESSION_TTL_MS;
@@ -69,14 +71,21 @@ export function mountAuth(app: Express) {
   app.post('/api/auth/session', async (req: Request, res: Response) => {
     const { address, nonce, signature } = (req.body ?? {}) as Record<string, unknown>;
     const c = typeof nonce === 'string' ? challenges.get(nonce) : undefined;
-    if (typeof nonce === 'string') challenges.delete(nonce);
     if (typeof address !== 'string' || !isAddress(address) || !c || c.expiresAt < Date.now() || c.address !== address.toLowerCase()) {
+      if (typeof nonce === 'string') challenges.delete(nonce);
       res.status(401).json({ ok: false, code: 'bad_challenge', error: 'Sign-in expired. Please try again.' });
       return;
     }
     if (typeof signature !== 'string' || !isHex(signature)) { res.status(401).json({ ok: false, code: 'bad_signature', error: 'Could not confirm you own this account.' }); return; }
-    let ok = false;
-    try { ok = await chainClient.verifyMessage({ address, message: c.message, signature }); } catch { ok = false; }
+    // Smart-account signatures are checked with a chain call. If the RPC fails, that's "try again",
+    // not "not your account" — and the challenge stays valid so the same signature can be resent.
+    let ok: boolean | null = null;
+    for (let attempt = 0; attempt < 3 && ok === null; attempt++) {
+      try { ok = await chainClient.verifyMessage({ address, message: c.message, signature }); }
+      catch { await new Promise(r => setTimeout(r, 400 * (attempt + 1))); }
+    }
+    if (ok === null) { res.status(503).json({ ok: false, code: 'chain_unavailable', error: 'Couldn\'t reach the blockchain to confirm your sign-in. Please try again in a moment.' }); return; }
+    challenges.delete(nonce as string);
     if (!ok) { res.status(401).json({ ok: false, code: 'bad_signature', error: 'Could not confirm you own this account.' }); return; }
     res.json({ ok: true, ...issueToken(address) });
   });
