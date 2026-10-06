@@ -104,6 +104,9 @@ const springs = {
   gentle: { type: 'spring', stiffness: 280, damping: 26 } as const,
 };
 
+const STEPS = ['Photos', 'Location', 'Details', 'Price'] as const;
+const FIELD_STEP: Record<string, number> = { address: 1, location: 1, description: 2, rent: 3, deposit: 3 };
+
 export default function LandlordDashboard({ account }: Props) {
   // Screen comes from the URL so reloads and the back button work.
   const [path, navigate] = usePath();
@@ -141,7 +144,10 @@ export default function LandlordDashboard({ account }: Props) {
   // Pre-fill the form when editing a listing or reviewing a WhatsApp draft (once per target).
   const prefillKey = editingId !== null ? `edit:${editingId}` : draftCode ? `draft:${draftCode}` : '';
   const [prefilled, setPrefilled] = useState('');
-  const editTarget = editingId !== null ? chain.data?.listings.find(l => l.id === editingId) : undefined;
+  // Only a live listing you own can be edited (an edit retires the old id, so old links go stale).
+  const editTarget = editingId !== null
+    ? chain.data?.listings.find(l => l.id === editingId && l.active && l.landlord.toLowerCase() === account.address.toLowerCase())
+    : undefined;
   const draftQuery = useQuery({
     queryKey: ['wa-draft', draftCode],
     enabled: !!draftCode,
@@ -258,6 +264,22 @@ export default function LandlordDashboard({ account }: Props) {
     </p>
   );
 
+  // The form is split into short steps; each required field belongs to one.
+  const [step, setStep] = useState(0);
+  const [stepPath, setStepPath] = useState(path);
+  if (stepPath !== path) { setStepPath(path); setStep(0); setShowErrors(false); }  // new screen → start at step 1
+  const goToStep = (s: number) => { setStep(s); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  function nextStep() {
+    const here = problems.filter(p => FIELD_STEP[p.field] === step);
+    if (here.length) {
+      setShowErrors(true);
+      toast.error(here[0].message);
+      document.getElementById(`field-${here[0].field}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    goToStep(step + 1);
+  }
+
   async function checkGeo() {
     if (form.address.trim().length < 5) return;
     setGeoStatus('checking');
@@ -307,7 +329,8 @@ export default function LandlordDashboard({ account }: Props) {
     if (!isValid) {
       setShowErrors(true);
       toast.error(problems.length === 1 ? problems[0].message : `Please fix ${problems.length} things: ${problems.map(p => p.message.replace(/\.$/, '')).join('; ')}.`);
-      document.getElementById(`field-${problems[0].field}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setStep(FIELD_STEP[problems[0].field] ?? step);
+      setTimeout(() => document.getElementById(`field-${problems[0].field}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
       return;
     }
     if (!ESCROW_ADDRESS) {
@@ -431,26 +454,50 @@ export default function LandlordDashboard({ account }: Props) {
           <h2 className="display text-2xl font-bold mb-1" style={{ color: 'var(--ink)', letterSpacing: '-0.03em' }}>
             {editingId !== null ? 'Edit property' : draftCode ? 'Review your WhatsApp listing' : 'New property'}
           </h2>
-          <p className="text-sm mb-6" style={{ color: 'var(--muted)' }}>
+          <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>
             {draftCode
-              ? 'We filled this in from your WhatsApp message. Add photos, confirm the address on the map, fix anything we got wrong, then publish.'
+              ? 'We filled this in from your WhatsApp message. Add photos and check each step, then publish.'
               : editingId !== null
-                ? 'Update the details below. Saving republishes the listing — only possible while no tenant has paid.'
-                : 'Add photos, set your price — tenants pay you directly.'}
+                ? 'Saving republishes the listing — only possible while no tenant has paid.'
+                : 'Four quick steps. Tenants pay into escrow, not to an agent.'}
           </p>
+
+          {/* Steps — tap any to jump; Continue checks the current one */}
+          <nav aria-label="Listing steps" className="grid grid-cols-4 gap-1.5 mb-6">
+            {STEPS.map((label, i) => {
+              const hasError = showErrors && problems.some(p => FIELD_STEP[p.field] === i);
+              return (
+                <button key={label} type="button" onClick={() => goToStep(i)} aria-current={step === i ? 'step' : undefined} className="text-left">
+                  <span className="block h-1 rounded-full mb-1.5 transition-colors"
+                    style={{ background: hasError ? 'var(--danger)' : i <= step ? 'var(--accent)' : 'var(--border)' }} />
+                  <span className="text-xs font-semibold" style={{ color: hasError ? 'var(--danger)' : step === i ? 'var(--ink)' : 'var(--subtle)' }}>
+                    {i + 1}. {label}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+          {editingId !== null && chain.data && !editTarget && (
+            <p className="text-sm mb-6 px-4 py-3 rounded-xl" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+              Listing #{editingId.toString()} isn't live any more (or isn't yours). It was probably replaced when you saved an edit, or deleted.{' '}
+              <button type="button" onClick={() => setView('home')} className="underline font-semibold">Go to your properties</button> and tap Edit on the current one.
+            </p>
+          )}
           {draftCode && draftQuery.isError && (
             <p className="text-sm mb-6 px-4 py-3 rounded-xl" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
-              {(draftQuery.error as Error).message} You can still fill in the form yourself.
+              {(draftQuery.error).message} You can still fill in the form yourself.
             </p>
           )}
 
           <div className="space-y-5">
 
-            {/* ── Media upload ── */}
+            {/* ── Step 1: Media upload ── */}
+            {step === 0 && (
             <div>
-              <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
+              <label className="block text-xs font-semibold mb-1 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                 Photos &amp; Videos ({media.length}/10)
               </label>
+              <p className="text-xs mb-2" style={{ color: 'var(--subtle)' }}>Listings with clear photos get far more inspection requests. A short video tour helps too.</p>
               <div
                 className="relative rounded-3xl border-2 border-dashed transition-all"
                 style={{
@@ -523,8 +570,10 @@ export default function LandlordDashboard({ account }: Props) {
                 )}
               </div>
             </div>
+            )}
 
-            {/* ── Full address + pin drop ── */}
+            {/* ── Step 2: Location & contact ── */}
+            {step === 1 && (<>
             <div id="field-address" className="scroll-mt-24">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
@@ -627,8 +676,10 @@ export default function LandlordDashboard({ account }: Props) {
               />
               <p className="text-xs mt-1.5" style={{ color: 'var(--subtle)' }}>Shown on your listing so tenants can book an inspection. Leave empty to keep it private.</p>
             </div>
+            </>)}
 
-            {/* ── Bedrooms ── */}
+            {/* ── Step 3: Details ── */}
+            {step === 2 && (<>
             <div>
               <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Bedrooms</label>
               <div className="flex gap-2">
@@ -726,8 +777,10 @@ export default function LandlordDashboard({ account }: Props) {
                 })}
               </div>
             </div>
+            </>)}
 
-            {/* ── Pricing card ── */}
+            {/* ── Step 4: Price & review ── */}
+            {step === 3 && (<>
             <div
               className="rounded-3xl p-5 space-y-4"
               style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid var(--glass-border)', boxShadow: 'var(--shadow-card)' }}
@@ -785,29 +838,56 @@ export default function LandlordDashboard({ account }: Props) {
               )}
             </div>
 
-            {/* ── Escrow note ── */}
+            {/* ── Review: everything from earlier steps, each row jumps back to its step ── */}
+            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+              {[
+                { s: 0, label: 'Photos', value: media.length ? `${media.length} added` : 'None yet' },
+                { s: 1, label: 'Address', value: form.address.trim() ? `${form.address.trim()}${locationConfirmed ? '' : ' (not on map yet)'}` : 'Missing' },
+                { s: 2, label: 'Home', value: `${form.rooms} bed · ${t(form.propertyType as TranslationKey)} · ${t(form.furnishing as TranslationKey)}` },
+              ].map(r => (
+                <button key={r.label} type="button" onClick={() => goToStep(r.s)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm border-b last:border-b-0" style={{ borderColor: 'var(--border)' }}>
+                  <span className="w-16 shrink-0 text-xs" style={{ color: 'var(--muted)' }}>{r.label}</span>
+                  <span className="flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>{r.value}</span>
+                  <Pencil className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--subtle)' }} />
+                </button>
+              ))}
+            </div>
+
             <div className="flex gap-3 p-4 rounded-2xl" style={{ background: 'var(--accent-soft)' }}>
               <Info className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
               <p className="text-xs leading-relaxed" style={{ color: 'var(--accent)' }}>
-                Rent held by smart contract — not an agent. Released to you only after tenant confirms move-in. <strong>Zero agent fee.</strong>
+                Rent is held by a smart contract, not an agent, and released to you after the tenant confirms move-in. <strong>Zero agent fee.</strong>
               </p>
             </div>
-
-            {/* ── Submit ── */}
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={() => { void handleSubmit(); }}
-              disabled={loading}
-              className="w-full py-4 rounded-2xl font-semibold text-white text-base flex items-center justify-center gap-2 transition-all disabled:opacity-70"
-              style={{ background: 'var(--accent)' }}
-            >
-              {loading
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Listing onchain…</>
-                : <><Home className="w-4 h-4" /> {editingId !== null ? 'Save changes' : 'Publish listing'}</>
-              }
-            </motion.button>
+            </>)}
           </div>
         </motion.div>
+
+        {/* ── Sticky step controls ── */}
+        <div className="fixed bottom-0 inset-x-0 z-30 border-t pb-safe" style={{ background: 'var(--popover)', borderColor: 'var(--border)' }}>
+          <div className="max-w-2xl mx-auto px-4 py-3 flex gap-2">
+            {step > 0 && (
+              <button type="button" onClick={() => goToStep(step - 1)} disabled={loading}
+                className="h-12 px-5 rounded-2xl text-sm font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+                Back
+              </button>
+            )}
+            {step < STEPS.length - 1 ? (
+              <motion.button whileTap={{ scale: 0.97 }} type="button" onClick={nextStep}
+                className="flex-1 h-12 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-1.5" style={{ background: 'var(--accent)' }}>
+                Continue to {STEPS[step + 1].toLowerCase()} <ChevronRight className="w-4 h-4" />
+              </motion.button>
+            ) : (
+              <motion.button whileTap={{ scale: 0.97 }} type="button" onClick={() => { void handleSubmit(); }} disabled={loading}
+                className="flex-1 h-12 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-70" style={{ background: 'var(--accent)' }}>
+                {loading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Listing onchain…</>
+                  : <><Home className="w-4 h-4" /> {editingId !== null ? 'Save changes' : 'Publish listing'}</>}
+              </motion.button>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
