@@ -293,18 +293,27 @@ app.get('/api/bot/draft/:code', (req, res) => {
 });
 
 // ── POST /api/bot/draft/:code/published — landlord published it onchain ───────
-app.post('/api/bot/draft/:code/published', (req, res) => {
+app.post('/api/bot/draft/:code/published', async (req, res) => {
   const listing = pendingListings.find(l => l.code === req.params.code && l.status === 'pending');
   if (!listing) { res.status(404).json({ error: 'Code not found or already used.' }); return; }
   listing.status = 'published';
+  // Best-effort WhatsApp confirmation. Twilio may refuse free-text business messages (it can require a
+  // pre-approved template — "ContentSid Required"), so report whether it actually went out.
+  let notified = false;
   if (process.env.TWILIO_WHATSAPP_NUMBER && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-    twilioClient.messages.create({
-      from: process.env.TWILIO_WHATSAPP_NUMBER,
-      to: listing.from,
-      body: `🎉 Your property in ${listing.location} is now LIVE on RentFlow! Tenants can find it directly — no agent fee.`,
-    }).catch((err: unknown) => console.error('[RentFlow Bot] Confirmation message failed:', err instanceof Error ? err.message : err));
+    try {
+      await twilioClient.messages.create({
+        from: process.env.TWILIO_WHATSAPP_NUMBER,
+        to: listing.from,
+        body: `🎉 Your property in ${listing.location} is now LIVE on RentFlow! Tenants can find it directly — no agent fee.`,
+      });
+      notified = true;
+    } catch (err) {
+      const e = err as { message?: string; code?: number };
+      console.error(`[RentFlow Bot] Confirmation message failed${e.code ? ` (Twilio ${e.code})` : ''}: ${e.message ?? err}`);
+    }
   }
-  res.json({ ok: true });
+  res.json({ ok: true, notified });
 });
 
 // ── Admin moderation (requires BOT_SECRET; not called from the browser) ───────
