@@ -57,7 +57,7 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
         onClick={e => e.stopPropagation()}
       >
         {/* Gallery */}
-        <div className="relative aspect-[16/10] sm:rounded-t-3xl overflow-hidden" style={{ background: 'var(--surface-muted)' }}>
+        <div className="relative aspect-[16/10] sm:aspect-[2/1] sm:rounded-t-3xl overflow-hidden" style={{ background: 'var(--surface-muted)' }}>
           {!current ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2" style={{ color: 'var(--subtle)' }}>
               <Home className="w-12 h-12" />
