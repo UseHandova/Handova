@@ -228,7 +228,7 @@ export function mountFeatures(app: Express, config: FeatureConfig | null = featu
     const me = requireSession(req, res); if (!me) return null;
     if (!config) { unavailable(res); return null; }
     const arbiter = await chainClient.readContract({ address: config.escrow, abi: ESCROW_ABI, functionName: 'arbiter' }).catch(() => null);
-    if (!arbiter || lower(arbiter) !== lower(me)) { bad(res, 403, 'Only the RentFlow admin can do this.', 'not_admin'); return null; }
+    if (!arbiter || lower(arbiter) !== lower(me)) { bad(res, 403, 'Only the Handova admin can do this.', 'not_admin'); return null; }
     return me;
   };
 

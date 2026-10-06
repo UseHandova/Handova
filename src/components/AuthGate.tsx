@@ -28,20 +28,20 @@ function friendlyAuthError(e: unknown, mode: 'register' | 'login'): AuthError {
   const raw = errText(e);
   if (/NotAllowedError|not allowed|timed out|cancel/i.test(raw)) {
     return mode === 'login'
-      ? { msg: 'No passkey was used. If you have not created a RentFlow account on this device yet, create one first.', action: 'register' }
+      ? { msg: 'No passkey was used. If you have not created a Handova account on this device yet, create one first.', action: 'register' }
       : { msg: 'Face ID / fingerprint was cancelled or timed out. Tap the button to try again.' };
   }
   if (/InvalidStateError|already registered/i.test(raw)) {
-    return { msg: 'This device already has a RentFlow account. Sign in instead.', action: 'login' };
+    return { msg: 'This device already has a Handova account. Sign in instead.', action: 'login' };
   }
   if (/not ?found|no credential|unknown credential|does not exist/i.test(raw)) {
-    return { msg: 'We could not find a RentFlow account for that passkey. Passkeys made on another website or device do not carry over — create a new account here.', action: 'register' };
+    return { msg: 'We could not find a Handova account for that passkey. Passkeys made on another website or device do not carry over — create a new account here.', action: 'register' };
   }
   if (/Invalid credentials|401|Unauthorized|clientKey/i.test(raw)) {
-    return { msg: 'RentFlow cannot reach its wallet service right now. Please try again in a few minutes.' };
+    return { msg: 'Handova cannot reach its wallet service right now. Please try again in a few minutes.' };
   }
   if (/SecurityError/i.test(raw)) {
-    return { msg: 'Passkeys are not available on this web address. Open RentFlow from its official link and try again.' };
+    return { msg: 'Passkeys are not available on this web address. Open Handova from its official link and try again.' };
   }
   if (/Failed to fetch|NetworkError|network/i.test(raw)) {
     return { msg: 'No internet connection. Check your data or Wi-Fi and try again.' };
@@ -88,7 +88,7 @@ export default function AuthGate({ onAuth }: Props) {
         }
       }
     } catch (e: unknown) {
-      console.error('[RentFlow] registerPasskey error:', e);
+      console.error('[Handova] registerPasskey error:', e);
       setError(friendlyAuthError(e, 'register'));
     } finally { setLoading(false); }
   }
@@ -100,7 +100,7 @@ export default function AuthGate({ onAuth }: Props) {
       const { account } = await loginPasskey();
       onAuth(account, account.address);
     } catch (e: unknown) {
-      console.error('[RentFlow] loginPasskey error:', e);
+      console.error('[Handova] loginPasskey error:', e);
       setError(friendlyAuthError(e, 'login'));
     } finally { setLoading(false); }
   }
@@ -185,7 +185,7 @@ export default function AuthGate({ onAuth }: Props) {
         <motion.h1 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.12 }} className="display text-4xl font-bold text-center mb-2"
           style={{ color: 'var(--ink)', letterSpacing: '-0.04em' }}>
-          RentFlow
+          Handova
         </motion.h1>
         <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.18 }} className="text-center text-sm max-w-xs mb-1"

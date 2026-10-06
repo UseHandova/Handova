@@ -95,7 +95,7 @@ export default function MaintenanceTracker({ account, role, homes = [], labels =
         <div className="p-5 space-y-4">
           {role === 'tenant' && (homes.length === 0 ? (
             <p className="text-sm px-4 py-3 rounded-xl" style={{ background: 'var(--surface-muted)', color: 'var(--muted)' }}>
-              You can report repairs once you've moved into a home through RentFlow.
+              You can report repairs once you've moved into a home through Handova.
             </p>
           ) : adding ? (
             <div className="space-y-3 p-4 rounded-2xl" style={{ border: '1px solid var(--border)' }}>

@@ -1,6 +1,6 @@
 /**
  * WhatsAppInbox — "List by WhatsApp" for landlords.
- * 1. Landlord sends house details (text or voice note) to the RentFlow WhatsApp bot.
+ * 1. Landlord sends house details (text or voice note) to the Handova WhatsApp bot.
  * 2. The bot replies with a 6-digit code (and a tap-to-open link when APP_URL is set).
  * 3. Landlord enters the code here, then reviews it in the full listing form (photos, address on the map,
  *    any corrections) and publishes from their own wallet — so they own the listing and receive the rent.
@@ -47,7 +47,7 @@ export default function WhatsAppInbox(_props: Props) {
     queryFn: async () => {
       let res: Response;
       try { res = await fetch(`/api/bot/draft/${submitted}`); } catch {
-        throw new Error('Could not reach the RentFlow WhatsApp service. Please try again.');
+        throw new Error('Could not reach the Handova WhatsApp service. Please try again.');
       }
       const body = await res.json().catch(() => ({})) as Draft & { error?: string };
       if (!res.ok) throw new Error(body.error ?? 'Could not find that code.');

@@ -1,6 +1,6 @@
-# Deploying RentFlow
+# Deploying Handova
 
-RentFlow has three parts:
+Handova has three parts:
 
 | Part | What | Where |
 |---|---|---|

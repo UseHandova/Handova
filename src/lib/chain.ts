@@ -91,8 +91,12 @@ async function fetchChainState(): Promise<ChainState> {
       { ...escrowContract, functionName: 'arbiter' },
     ],
   });
-  const nListings = Number(listingCount.result ?? 0n);
-  const nEscrows = Number(escrowCount.result ?? 0n);
+  // Multicall reports failed calls as results instead of throwing. If the counters themselves failed
+  // (RPC down / rate-limited), throw so the UI shows an error instead of "you have nothing".
+  if (listingCount.status === 'failure') throw listingCount.error;
+  if (escrowCount.status === 'failure') throw escrowCount.error;
+  const nListings = Number(listingCount.result);
+  const nEscrows = Number(escrowCount.result);
 
   const listingIds = Array.from({ length: nListings }, (_, i) => BigInt(i + 1));
   const escrowIds = Array.from({ length: nEscrows }, (_, i) => BigInt(i + 1));

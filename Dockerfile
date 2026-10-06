@@ -1,4 +1,4 @@
-# RentFlow API server: WhatsApp bot, identity verification, media, reviews/repairs/boosts/referrals/moderation.
+# Handova API server: WhatsApp bot, identity verification, media, reviews/repairs/boosts/referrals/moderation.
 # Deploy on Railway / Render / Fly with a persistent volume mounted at /app/server/data (SQLite + uploads).
 FROM oven/bun:1.3 AS base
 WORKDIR /app

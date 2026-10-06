@@ -309,7 +309,7 @@ export default function BrowseListings({ account }: Props) {
         )}
 
         {/* ── Grid ── */}
-        {chain.isLoading ? (
+        {chain.isLoading || (chain.isError && !chain.data) ? (
           <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 space-y-3">

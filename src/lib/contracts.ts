@@ -1,5 +1,5 @@
 /**
- * RentFlow contract ABIs and addresses.
+ * Handova contract ABIs and addresses.
  * Update ESCROW_ADDRESS and NFT_ADDRESS after deploy.
  */
 

@@ -1,5 +1,5 @@
 /**
- * RentFlow WhatsApp Bot Server
+ * Handova WhatsApp Bot Server
  * ─────────────────────────────────────────────────────────────────────────────
  * Receives WhatsApp messages from Twilio (text, images, voice notes).
  * Uses an LLM (Groq free tier, or OpenAI) to parse a listing from a landlord's message/voice note.
@@ -107,7 +107,7 @@ function publicDraft(l: PendingListing) {
 }
 
 // ── System prompt for listing extraction ─────────────────────────────────────
-const SYSTEM_PROMPT = `You are RentFlow AI assistant helping Lagos landlords list their properties.
+const SYSTEM_PROMPT = `You are Handova AI assistant helping Lagos landlords list their properties.
 Extract property listing details from the landlord's message (which may be in English, Yoruba, Pidgin, Igbo, or Hausa).
 
 Return ONLY a valid JSON object with these fields:
@@ -205,7 +205,7 @@ function isFromTwilio(req: express.Request): boolean {
 
 app.post('/api/whatsapp/incoming', async (req, res) => {
   if (!isFromTwilio(req)) {
-    console.error('[RentFlow Bot] Rejected webhook with an invalid Twilio signature');
+    console.error('[Handova Bot] Rejected webhook with an invalid Twilio signature');
     res.status(403).send('Invalid signature');
     return;
   }
@@ -237,7 +237,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
         );
         textToParse = `${msgBody} [Voice note transcript: ${transcript}]`;
       } catch (err) {
-        console.error('[RentFlow Bot] Voice transcription failed:', err instanceof Error ? err.message : err);
+        console.error('[Handova Bot] Voice transcription failed:', err instanceof Error ? err.message : err);
         // Fall back to text-only parsing
       }
     }
@@ -246,7 +246,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     if (!textToParse.trim() || textToParse.trim().length < 10) {
       res.set('Content-Type', 'text/xml').send(
         twimlReply(
-          'Welcome to RentFlow! Send me details about your property to list it.\n\nExample:\n"2 bedroom flat in Lekki Phase 1, ₦800k per year, generator and security"',
+          'Welcome to Handova! Send me details about your property to list it.\n\nExample:\n"2 bedroom flat in Lekki Phase 1, ₦800k per year, generator and security"',
         ),
       );
       return;
@@ -257,7 +257,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     try {
       parsed = await parseListingFromText(textToParse);
     } catch (err) {
-      console.error('[RentFlow Bot] Listing parse failed:', err instanceof Error ? err.message : err);
+      console.error('[Handova Bot] Listing parse failed:', err instanceof Error ? err.message : err);
       res.set('Content-Type', 'text/xml').send(
         twimlReply('Sorry, I could not understand the property details. Please try again with location, number of rooms, and rent amount.'),
       );
@@ -291,7 +291,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     // Send confirmation back to landlord
     const rentFormatted = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(parsed.rentNgn);
     const replyMsg = parsed.rentNgn > 0
-      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n${media.length ? `📷 ${media.length} photo/video${media.length > 1 ? 's' : ''} saved` : '📷 Tip: send photos of the house too — listings with photos get more tenants'}\n\n🔑 Your RentFlow code: *${listing.code}*\n${process.env.APP_URL ? `Tap to publish: ${process.env.APP_URL.replace(/\/$/, '')}/landlord/whatsapp?wa=${listing.code}` : 'Open RentFlow → Landlord → List by WhatsApp, enter this code, check the details and confirm the address on the map.'}`
+      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n${media.length ? `📷 ${media.length} photo/video${media.length > 1 ? 's' : ''} saved` : '📷 Tip: send photos of the house too — listings with photos get more tenants'}\n\n🔑 Your Handova code: *${listing.code}*\n${process.env.APP_URL ? `Tap to publish: ${process.env.APP_URL.replace(/\/$/, '')}/landlord/whatsapp?wa=${listing.code}` : 'Open Handova → Landlord → List by WhatsApp, enter this code, check the details and confirm the address on the map.'}`
       : `I received your message but couldn't find the rent amount. Please reply with: location, rooms, and rent. E.g. "2 bed Yaba 600k per year"`;
 
     res.set('Content-Type', 'text/xml').send(twimlReply(replyMsg));
@@ -325,12 +325,12 @@ app.post('/api/bot/draft/:code/published', async (req, res) => {
       await twilioClient.messages.create({
         from: process.env.TWILIO_WHATSAPP_NUMBER,
         to: listing.from,
-        body: `🎉 Your property in ${listing.location} is now LIVE on RentFlow! Tenants can find it directly — no agent fee.`,
+        body: `🎉 Your property in ${listing.location} is now LIVE on Handova! Tenants can find it directly — no agent fee.`,
       });
       notified = true;
     } catch (err) {
       const e = err as { message?: string; code?: number };
-      console.error(`[RentFlow Bot] Confirmation message failed${e.code ? ` (Twilio ${e.code})` : ''}: ${e.message ?? err}`);
+      console.error(`[Handova Bot] Confirmation message failed${e.code ? ` (Twilio ${e.code})` : ''}: ${e.message ?? err}`);
     }
   }
   res.json({ ok: true, notified });
@@ -380,11 +380,11 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`[RentFlow Bot] Server running on port ${PORT}`);
-  console.log(`[RentFlow Bot] Webhook URL: http://localhost:${PORT}/api/whatsapp/incoming`);
-  if (!aiConfigured) console.warn('[RentFlow Bot] WARNING: neither GROQ_API_KEY nor OPENAI_API_KEY is set');
-  else console.log(`[RentFlow Bot] AI provider: ${useGroq ? 'Groq' : 'OpenAI'} (${CHAT_MODEL}, ${TRANSCRIBE_MODEL})`);
-  if (!process.env.TWILIO_ACCOUNT_SID) console.warn('[RentFlow Bot] WARNING: TWILIO_ACCOUNT_SID not set');
+  console.log(`[Handova Bot] Server running on port ${PORT}`);
+  console.log(`[Handova Bot] Webhook URL: http://localhost:${PORT}/api/whatsapp/incoming`);
+  if (!aiConfigured) console.warn('[Handova Bot] WARNING: neither GROQ_API_KEY nor OPENAI_API_KEY is set');
+  else console.log(`[Handova Bot] AI provider: ${useGroq ? 'Groq' : 'OpenAI'} (${CHAT_MODEL}, ${TRANSCRIBE_MODEL})`);
+  if (!process.env.TWILIO_ACCOUNT_SID) console.warn('[Handova Bot] WARNING: TWILIO_ACCOUNT_SID not set');
 });
 
 export default app;

@@ -22,7 +22,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[RentFlow] UI error:', error, info.componentStack);
+    console.error('[Handova] UI error:', error, info.componentStack);
   }
 
   reset = () => {
@@ -37,7 +37,7 @@ export default class ErrorBoundary extends Component<Props, State> {
         style={{ background: 'var(--popover)', border: '1px solid var(--border)', color: 'var(--ink)' }}>
         <p className="font-semibold">Something went wrong</p>
         <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-          This part of RentFlow hit an error. Your account and money are safe.
+          This part of Handova hit an error. Your account and money are safe.
         </p>
         <div className="flex gap-2 justify-center mt-4">
           <button onClick={this.reset} className="px-4 py-2 rounded-xl text-sm font-semibold"

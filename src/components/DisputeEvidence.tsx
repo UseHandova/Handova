@@ -109,7 +109,7 @@ export default function DisputeEvidence({ escrowId, onClose }: Props) {
                 <CheckCircle2 className="w-14 h-14" style={{ color: 'var(--success)' }} />
                 <div>
                   <h3 className="font-bold text-lg mb-1" style={{ color: 'var(--ink)' }}>{t('evidence_submitted')}</h3>
-                  <p className="text-sm" style={{ color: 'var(--muted)' }}>The RentFlow team will review your evidence and resolve the dispute within 48 hours.</p>
+                  <p className="text-sm" style={{ color: 'var(--muted)' }}>The Handova team will review your evidence and resolve the dispute within 48 hours.</p>
                 </div>
                 <button onClick={onClose} className="px-8 py-3 rounded-2xl font-semibold text-white"
                   style={{ background: 'var(--accent)' }}>Done</button>
@@ -120,7 +120,7 @@ export default function DisputeEvidence({ escrowId, onClose }: Props) {
                   style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
                   <p className="text-xs leading-relaxed" style={{ color: 'var(--ink)' }}>
-                    Upload photos, videos, or documents as evidence. This is reviewed by the RentFlow team before funds are released.
+                    Upload photos, videos, or documents as evidence. This is reviewed by the Handova team before funds are released.
                   </p>
                 </div>
 

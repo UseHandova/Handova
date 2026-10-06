@@ -59,7 +59,7 @@ export function mountAuth(app: Express) {
     const address = String(req.query.address ?? '');
     if (!isAddress(address)) { res.status(400).json({ ok: false, error: 'Invalid address.' }); return; }
     const nonce = randomBytes(16).toString('hex');
-    const message = `Sign in to RentFlow\n\nAccount: ${address}\nNonce: ${nonce}\nIssued: ${new Date().toISOString()}`;
+    const message = `Sign in to Handova\n\nAccount: ${address}\nNonce: ${nonce}\nIssued: ${new Date().toISOString()}`;
     challenges.set(nonce, { address: address.toLowerCase(), message, expiresAt: Date.now() + CHALLENGE_TTL_MS });
     // Drop expired challenges so the map can't grow without bound.
     for (const [k, v] of challenges) if (v.expiresAt < Date.now()) challenges.delete(k);

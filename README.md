@@ -1,8 +1,8 @@
-# RentFlow 🏠
+# Handova 🏠
 
 **Rent a home in Lagos without paying an agent 20–40% on top.**
 
-RentFlow connects landlords and tenants directly. The tenant's rent sits in an onchain escrow until they move in. The deposit is protected until they move out. Every lease becomes a verifiable certificate the tenant owns. Landlords can list a property by sending a WhatsApp voice note, with no forms and no wallet setup.
+Handova connects landlords and tenants directly. The tenant's rent sits in an onchain escrow until they move in. The deposit is protected until they move out. Every lease becomes a verifiable certificate the tenant owns. Landlords can list a property by sending a WhatsApp voice note, with no forms and no wallet setup.
 
 Built on **[Arc](https://arc.network)** (Circle's stablecoin-native L1) with USDC.
 
@@ -12,7 +12,7 @@ Built on **[Arc](https://arc.network)** (Circle's stablecoin-native L1) with USD
 
 In Lagos, agents routinely add "agency" and "legal" fees of 20–40% to a year's rent. They also pad the "total package" and sometimes list houses they don't control. Tenants pay 1–2 years upfront with no protection. Many landlords aren't comfortable with apps, but they all use WhatsApp, TikTok and Facebook.
 
-RentFlow replaces the agent's role as trusted middleman with a smart contract. It keeps the experience as simple as sending a message.
+Handova replaces the agent's role as trusted middleman with a smart contract. It keeps the experience as simple as sending a message.
 
 ## How it works
 
@@ -39,7 +39,7 @@ Landlord                         RentFlowEscrow (Arc)                     Tenant
 | Landlord hands over keys, tenant goes silent | After 3 days the landlord can `claimMoveIn` |
 | Nobody acts within 7 days, no handover | Either party can `cancelExpired`, and the tenant is fully refunded |
 | Tenant moves out | Deposit enters a 7-day review (`Ending`). Landlord approves or disputes. If they stay silent, the tenant claims it back |
-| Dispute | Both parties can agree a split (`proposeSettlement`), or the RentFlow arbiter decides (`resolveDispute`). If nobody acts in 7 days, it splits 50/50 |
+| Dispute | Both parties can agree a split (`proposeSettlement`), or the Handova arbiter decides (`resolveDispute`). If nobody acts in 7 days, it splits 50/50 |
 
 Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 
@@ -124,11 +124,11 @@ One command deploys the escrow, deploys the NFT pointing at it, and links them:
 
 ```bash
 cast wallet import rentflow-deployer --interactive   # paste your testnet private key once; stored encrypted
-forge script contracts/script/DeployRentFlow.s.sol \
+forge script contracts/script/DeployHandova.s.sol \
   --rpc-url https://rpc.testnet.arc.network --account rentflow-deployer --broadcast
 ```
 
-Set `ARBITER` to your **RentFlow app wallet address** (the passkey account shown in the app header) so you can resolve disputes from the Admin dashboard. Prefix the command with `ARBITER=0xYourAppAddress`.
+Set `ARBITER` to your **Handova app wallet address** (the passkey account shown in the app header) so you can resolve disputes from the Admin dashboard. Prefix the command with `ARBITER=0xYourAppAddress`.
 
 The deployer needs about 0.25 testnet USDC for gas ([faucet.circle.com](https://faucet.circle.com)). Copy the two printed addresses into `VITE_ESCROW_ADDRESS` / `VITE_NFT_ADDRESS`.
 

@@ -64,7 +64,7 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
         </motion.button>
         <div className="flex items-center gap-2">
           <button onClick={() => navigate(role ? `/${role}` : '/')} className="display font-semibold text-base" style={{ color: 'var(--ink)' }}>
-            RentFlow
+            Handova
           </button>
           {role && roleColor && (
             <motion.span

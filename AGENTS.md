@@ -1,4 +1,4 @@
-# RentFlow — Lagos Housing DApp
+# Handova — Lagos Housing DApp
 
 ## Deployed Contracts (Arc Testnet)
 
@@ -8,7 +8,7 @@
 | RentFlowNFT | `0x78A84547a4372950b4898DE06c008D83F18D445F` |
 
 USDC (Arc Testnet): `0x3600000000000000000000000000000000000000`
-Deployed 2026-10-06 with `contracts/script/DeployRentFlow.s.sol` (NFT already linked). Owner/deployer keystore: `rentflow-deployer` (password in `~/.rentflow-deployer-password`). Verifier (KYC backend key): `0x6380197079a664E358842Bb21d34775B431762cD`.
+Deployed 2026-10-06 with `contracts/script/DeployHandova.s.sol` (NFT already linked). Owner/deployer keystore: `rentflow-deployer` (password in `~/.rentflow-deployer-password`). Verifier (KYC backend key): `0x6380197079a664E358842Bb21d34775B431762cD`.
 
 ---
 

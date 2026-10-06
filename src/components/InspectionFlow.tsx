@@ -56,7 +56,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
     }
     if (landlordPhone) {
       const text = encodeURIComponent(
-        `Hello, I saw your property at ${listing.address || listing.location} on RentFlow and would like to book an inspection.`
+        `Hello, I saw your property at ${listing.address || listing.location} on Handova and would like to book an inspection.`
       );
       window.open(`https://wa.me/${landlordPhone}?text=${text}`, '_blank');
     }

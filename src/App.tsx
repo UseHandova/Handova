@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AuthGate from '@/components/AuthGate';
 import LanguageWelcome from '@/components/LanguageWelcome';
 import RolePicker from '@/components/RolePicker';
+import ChainStatusBanner from '@/components/ChainStatusBanner';
 import { useCaptureReferral } from '@/components/ReferralSystem';
 import Header from '@/components/Header';
 import TabBar from '@/components/TabBar';
@@ -127,6 +128,7 @@ function MainApp({ account, address, role, tab, navigate, pendingUsdc, onSignOut
         onSignOut={onSignOut} onWithdraw={onWithdraw}
         role={role} onSwitchRole={() => { rememberRole(null); navigate('/'); }}
         onOpenAdmin={() => setShowAdmin(true)} />
+      <ChainStatusBanner />
       <AnimatePresence mode="wait">
         <motion.div key={role === 'tenant' ? tab : role} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="relative z-10">

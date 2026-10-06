@@ -968,7 +968,7 @@ export default function LandlordDashboard({ account }: Props) {
       <AnimatePresence mode="wait">
         {dashTab === 'listings' && (
           <motion.div key="listings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            {chain.isLoading ? (
+            {chain.isLoading || (chain.isError && !chain.data) ? (
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
             ) : listings.length === 0 ? (
               <div className="rounded-2xl p-10 flex flex-col items-center text-center" style={{ border: '1px dashed var(--border-strong)' }}>
