@@ -10,6 +10,7 @@ import {RentFlowNFT} from "../RentFlowNFT.sol";
 /// Env vars:
 ///   USDC_ADDRESS  - optional, defaults to Arc Testnet USDC
 ///   ARBITER       - optional dispute arbiter, defaults to the deployer
+///   VERIFIER      - optional KYC verifier (backend key), defaults to the deployer
 ///
 /// Usage:
 ///   forge script contracts/script/DeployRentFlow.s.sol \
@@ -20,16 +21,19 @@ contract DeployRentFlow is Script {
     function run() external returns (RentFlowEscrow escrow, RentFlowNFT nft) {
         address usdc = vm.envOr("USDC_ADDRESS", ARC_TESTNET_USDC);
         address arbiter = vm.envOr("ARBITER", address(0));
+        address verifier = vm.envOr("VERIFIER", address(0));
 
         vm.startBroadcast();
         escrow = new RentFlowEscrow(usdc);
         nft = new RentFlowNFT(address(escrow));
         escrow.setNftContract(address(nft));
         if (arbiter != address(0)) escrow.setArbiter(arbiter);
+        if (verifier != address(0)) escrow.setVerifier(verifier);
         vm.stopBroadcast();
 
         console.log("RentFlowEscrow:", address(escrow));
         console.log("RentFlowNFT:   ", address(nft));
         console.log("Arbiter:       ", escrow.arbiter());
+        console.log("Verifier:      ", escrow.verifier());
     }
 }

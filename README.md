@@ -66,10 +66,9 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 
 | Contract | Address |
 |---|---|
-| RentFlowEscrow | `0xb590c4f6339c454e05668da8f27ce656c463aadc` |
-| RentFlowNFT | `0x38b0daf9ce27205bceedb7dc90b90bad9b44dc5a` |
+| RentFlowEscrow | `0x29993a0e1BF9ef863c10Bfc7171c410DCE9Fe7Ca` |
+| RentFlowNFT | `0x78A84547a4372950b4898DE06c008D83F18D445F` |
 
-> ⚠️ These addresses run the **previous** escrow version. The hardened escrow in `contracts/` (handover, deposit review, arbiter) must be redeployed before its new functions can be used from the app.
 
 ## Getting started
 
