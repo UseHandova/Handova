@@ -6,7 +6,7 @@ import ThemeToggle from '@/components/ThemeToggle';
 import LangSelector from '@/components/LangSelector';
 import NotificationCenter from '@/components/NotificationCenter';
 
-const ADMIN_ADDRESS = '0x5B12Ce46C7194aD57d143bC22847224047b1Ef42';
+import { useIsAdmin } from '@/lib/chain';
 
 interface Props {
   address: string;
@@ -28,6 +28,7 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
 };
 
 export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, role, onSwitchRole, onOpenAdmin }: Props) {
+  const isAdmin = useIsAdmin(address);
   function handleSignOut() {
     clearCredential();
     onSignOut();
@@ -81,7 +82,7 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
         <NotificationCenter />
 
         {/* Admin (if admin wallet) */}
-        {address.toLowerCase() === ADMIN_ADDRESS.toLowerCase() && onOpenAdmin && (
+        {isAdmin && onOpenAdmin && (
           <motion.button whileTap={{ scale: 0.90 }} onClick={onOpenAdmin}
             className="w-10 h-10 rounded-2xl flex items-center justify-center"
             style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}

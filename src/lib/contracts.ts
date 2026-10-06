@@ -38,6 +38,10 @@ export const ESCROW_ABI = [
   { inputs: [], name: 'escrowCounter', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ name: 'addr', type: 'address' }], name: 'pendingWithdrawals', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ name: 'listingId', type: 'uint256' }], name: 'listingToEscrowId', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: 'escrowId', type: 'uint256' }], name: 'handoverAt', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: 'escrowId', type: 'uint256' }], name: 'endRequestedAt', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: 'escrowId', type: 'uint256' }], name: 'disputedAt', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'arbiter', outputs: [{ name: '', type: 'address' }], stateMutability: 'view', type: 'function' },
   // Write
   {
     inputs: [

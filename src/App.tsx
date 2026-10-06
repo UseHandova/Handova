@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { toast } from 'sonner';
-import { type Hex } from 'viem';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Building2, Search, Home } from 'lucide-react';
 import AuthGate from '@/components/AuthGate';
@@ -11,8 +10,8 @@ import BrowseListings from '@/components/BrowseListings';
 import LandlordDashboard from '@/components/LandlordDashboard';
 import MyLeases from '@/components/MyLeases';
 import ThemeToggle from '@/components/ThemeToggle';
-import { bundlerClient } from '@/lib/wallet';
 import { ESCROW_ADDRESS } from '@/lib/contracts';
+import { sendEscrowTx, usePendingWithdrawal, useRefreshChain } from '@/lib/chain';
 import { applyTheme, getTheme } from '@/lib/theme';
 import { useLang } from '@/lib/LangContext';
 import LangSelector from '@/components/LangSelector';
@@ -28,7 +27,8 @@ export default function App() {
   const [address, setAddress] = useState('');
   const [role, setRole] = useState<Role | null>(null);
   const [tab, setTab] = useState<Tab>('browse');
-  const [pendingUsdc] = useState(0);
+  const pendingUsdc = usePendingWithdrawal(address).data ?? 0;
+  const refreshChain = useRefreshChain();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
 
@@ -47,13 +47,7 @@ export default function App() {
   async function handleWithdraw() {
     if (!account || !ESCROW_ADDRESS) return;
     try {
-      const calldata = '0x3ccfd60b' as Hex;
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }],
-        paymaster: true,
-      });
-      toast.promise(bundlerClient.waitForUserOperationReceipt({ hash }), {
+      toast.promise(sendEscrowTx(account, { functionName: 'withdraw' }).then(refreshChain), {
         loading: 'Withdrawing USDC…',
         success: 'USDC withdrawn to your wallet!',
         error: 'Withdrawal failed.',
@@ -189,7 +183,7 @@ export default function App() {
       {/* Admin dashboard overlay */}
       <AnimatePresence>
         {showAdmin && (
-          <AdminDashboard address={address} onClose={() => setShowAdmin(false)} />
+          <AdminDashboard address={address} account={account} onClose={() => setShowAdmin(false)} />
         )}
       </AnimatePresence>
     </div>

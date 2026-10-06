@@ -118,6 +118,8 @@ forge script contracts/script/DeployRentFlow.s.sol \
   --rpc-url https://rpc.testnet.arc.network --account rentflow-deployer --broadcast
 ```
 
+Set `ARBITER` to your **RentFlow app wallet address** (the passkey account shown in the app header) so you can resolve disputes from the Admin dashboard. Prefix the command with `ARBITER=0xYourAppAddress`.
+
 The deployer needs about 0.25 testnet USDC for gas ([faucet.circle.com](https://faucet.circle.com)). Copy the two printed addresses into `VITE_ESCROW_ADDRESS` / `VITE_NFT_ADDRESS`.
 
 ### Manual setup (only if you deploy without the script)

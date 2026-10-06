@@ -3,7 +3,7 @@
  * Glass cards, animated media grid, tab navigation, rich stats.
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Home, MapPin, Info, Loader2, Check, Upload, X,
@@ -12,9 +12,11 @@ import {
   CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { formatNaira, nairaToUsdc } from '@/lib/naira';
+import { formatNaira, nairaToUsdc, USDC_TO_NGN } from '@/lib/naira';
 import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
+import { sameAddress, useChainState, useRefreshChain, type ChainEscrow } from '@/lib/chain';
+import LandlordEscrowPanel from '@/components/LandlordEscrowPanel';
 import { bundlerClient } from '@/lib/wallet';
 import { encodeFunctionData } from 'viem';
 import { toast } from 'sonner';
@@ -43,6 +45,7 @@ interface MockListing {
   status: 'active' | 'rented';
   thumb: string | null;
   color: string;
+  escrow?: ChainEscrow;
 }
 
 const LISTING_COLORS = [
@@ -82,7 +85,26 @@ export default function LandlordDashboard({ account }: Props) {
   const [showPinDrop, setShowPinDrop] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
-  const [listings, setListings] = useState<MockListing[]>([]);
+  const chain = useChainState();
+  const refreshChain = useRefreshChain();
+
+  // This landlord's listings, read from the escrow contract.
+  const listings = useMemo<MockListing[]>(() => {
+    const escrows = new Map((chain.data?.escrows ?? []).map(e => [e.id, e]));
+    return (chain.data?.listings ?? [])
+      .filter(l => sameAddress(l.landlord, account.address))
+      .reverse()
+      .map(l => ({
+        id: String(l.id),
+        location: l.meta.location || l.meta.address || `Listing #${l.id}`,
+        rooms: String(l.meta.rooms ?? '—'),
+        rentNgn: l.rentUsdc * USDC_TO_NGN,
+        status: l.escrowId !== 0n ? 'rented' : 'active',
+        thumb: null,
+        color: LISTING_COLORS[Number(l.id % BigInt(LISTING_COLORS.length))],
+        escrow: escrows.get(l.escrowId),
+      }));
+  }, [chain.data, account.address]);
   const [showVerification, setShowVerification] = useState(false);
   const [showBoost, setShowBoost] = useState<string | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
@@ -171,6 +193,7 @@ export default function LandlordDashboard({ account }: Props) {
         amenities: form.amenities,
         mediaCount: media.length,
         thumbs,
+        ...(pin && { lat: pin.lat, lng: pin.lng }),
       });
 
       const calldata = encodeFunctionData({
@@ -187,18 +210,7 @@ export default function LandlordDashboard({ account }: Props) {
 
       await bundlerClient.waitForUserOperationReceipt({ hash });
 
-      setListings(prev => [
-        {
-          id: Math.random().toString(36).slice(2),
-          location: form.location,
-          rooms: form.rooms,
-          rentNgn: parseFloat(form.rentNgn),
-          status: 'active',
-          thumb: media.find(m => m.type === 'image')?.url ?? null,
-          color: LISTING_COLORS[prev.length % LISTING_COLORS.length],
-        },
-        ...prev,
-      ]);
+      await refreshChain();
 
       setDone(true);
       toast.success('Property listed onchain!');
@@ -809,6 +821,7 @@ export default function LandlordDashboard({ account }: Props) {
                           <Eye className="w-4 h-4" style={{ color: 'var(--subtle)' }} />
                         </div>
                       </div>
+                      {l.escrow && <LandlordEscrowPanel escrow={l.escrow} account={account} />}
                     </motion.div>
                   ))}
                 </div>
