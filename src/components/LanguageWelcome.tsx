@@ -22,7 +22,7 @@ export default function LanguageWelcome() {
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-12" style={{ background: 'var(--bg-gradient)' }}>
       <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-5"
-        style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 12px 36px var(--accent-glow)' }}>
+        style={{ background: 'var(--accent)', boxShadow: 'none' }}>
         <Home className="w-8 h-8 text-white" />
       </div>
       <h1 className="display text-3xl font-bold mb-1" style={{ color: 'var(--ink)', letterSpacing: '-0.04em' }}>RentFlow</h1>

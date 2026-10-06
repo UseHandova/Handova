@@ -176,10 +176,9 @@ export default function AuthGate({ onAuth }: Props) {
         <motion.div initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
           transition={{ ...springs.gentle, delay: 0.05 }} className="relative mb-6">
           <div className="w-20 h-20 rounded-3xl flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 16px 48px var(--accent-glow), 0 4px 16px rgba(0,0,0,0.12)' }}>
+            style={{ background: 'var(--accent)', boxShadow: 'none' }}>
             <Home className="w-10 h-10 text-white" />
           </div>
-          <div className="spectral-strip mt-3 mx-auto w-16 opacity-70" />
         </motion.div>
 
         {/* Headline */}
@@ -219,8 +218,6 @@ export default function AuthGate({ onAuth }: Props) {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.32 }} className="w-full max-w-sm">
           <div className="glass-card rounded-3xl p-6">
-            <div className="spectral-strip mb-6 -mx-6 rounded-t-3xl"
-              style={{ marginTop: '-24px', borderRadius: '12px 12px 0 0' }} />
 
             <AnimatePresence mode="wait">
               {/* Choose */}
@@ -232,7 +229,7 @@ export default function AuthGate({ onAuth }: Props) {
 
                   <motion.button whileTap={{ scale: 0.97 }} onClick={() => setMode('register')}
                     className="w-full py-4 rounded-2xl font-semibold text-white text-base mb-3 flex items-center justify-center gap-2"
-                    style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 4px 20px var(--accent-glow)' }}>
+                    style={{ background: 'var(--accent)', boxShadow: 'none' }}>
                     <Fingerprint className="w-5 h-5" />
                     {t('create_account')}
                   </motion.button>
@@ -284,8 +281,8 @@ export default function AuthGate({ onAuth }: Props) {
                     disabled={loading || !usernameValid}
                     className="w-full py-4 rounded-2xl font-semibold text-white text-base flex items-center justify-center gap-2"
                     style={{
-                      background: usernameValid && !loading ? 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' : 'var(--subtle)',
-                      boxShadow: usernameValid && !loading ? '0 4px 20px var(--accent-glow)' : 'none',
+                      background: usernameValid && !loading ? 'var(--accent)' : 'var(--subtle)',
+                      boxShadow: usernameValid && !loading ? 'none' : 'none',
                     }}>
                     {loading
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> {t('setting_up')}</>

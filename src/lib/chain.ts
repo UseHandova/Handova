@@ -31,6 +31,8 @@ export interface ListingMeta {
   lat?: number;
   lng?: number;
   source?: string;
+  /** Landlord's WhatsApp number for inspections (digits, e.g. 2348031234567), if they chose to share it. */
+  phone?: string;
   /** Uploaded photos/videos (URLs served by /api/media). */
   media?: { type: 'image' | 'video'; url: string }[];
 }

@@ -111,7 +111,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
               <motion.div key="done" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                 className="flex flex-col items-center text-center py-6 gap-4">
                 <div className="w-20 h-20 rounded-full flex items-center justify-center"
-                  style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)', boxShadow: '0 8px 32px rgba(245,158,11,0.3)' }}>
+                  style={{ background: '#a35a00', boxShadow: '0 8px 32px rgba(245,158,11,0.3)' }}>
                   <Star className="w-10 h-10 text-white" />
                 </div>
                 <div>
@@ -121,7 +121,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
                   </p>
                 </div>
                 <button onClick={onClose} className="px-8 py-3 rounded-2xl font-semibold text-white"
-                  style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
+                  style={{ background: 'var(--accent)' }}>
                   Done
                 </button>
               </motion.div>
@@ -155,7 +155,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
                       onClick={() => setSelected(opt.id)}
                       className="w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border transition-all"
                       style={selected === opt.id
-                        ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: '0 4px 16px var(--accent-glow)' }
+                        ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: 'none' }
                         : { background: 'var(--surface-strong)', color: 'var(--ink)', borderColor: 'var(--border)' }}>
                       <div className="flex items-center gap-2">
                         <Zap className="w-4 h-4" />
@@ -176,7 +176,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
 
                 <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleBoost(); }} disabled={boosting}
                   className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-                  style={{ background: boosting ? 'var(--subtle)' : 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)', boxShadow: boosting ? 'none' : '0 4px 16px rgba(245,158,11,0.3)' }}>
+                  style={{ background: boosting ? 'var(--subtle)' : '#a35a00', boxShadow: boosting ? 'none' : '0 4px 16px rgba(245,158,11,0.3)' }}>
                   {boosting
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Paying {option.usdcCost} USDC…</>
                     : <><CheckCircle2 className="w-4 h-4" /> Boost for {option.days} days — ${option.usdcCost} USDC</>}

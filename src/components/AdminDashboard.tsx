@@ -167,7 +167,7 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
                 <button key={t2.id} onClick={() => setTab(t2.id)}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold shrink-0 transition-all"
                   style={tab === t2.id
-                    ? { background: 'var(--accent)', color: 'white', boxShadow: '0 2px 10px var(--accent-glow)' }
+                    ? { background: 'var(--accent)', color: 'white', boxShadow: 'none' }
                     : { background: 'var(--surface-strong)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                   <t2.icon className="w-3.5 h-3.5" />{t2.label}
                 </button>

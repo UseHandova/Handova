@@ -6,16 +6,17 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Home, MapPin, Info, Loader2, Check, Upload, X,
-  Play, ImagePlus, Building2, ChevronRight, TrendingUp,
-  PlusCircle, Eye, BarChart3, List, MessageCircle,
-  CheckCircle2, AlertCircle, BadgeCheck,
+  AlertCircle, BadgeCheck, Building2, Check, CheckCircle2, ChevronRight, Home, ImagePlus, Info, Loader2, MapPin, MessageCircle, Play, PlusCircle, ShieldAlert, Star, TrendingUp, Upload, Wrench, X,
 } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira, nairaToUsdc, USDC_TO_NGN } from '@/lib/naira';
 import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
-import { sameAddress, useChainState, useRefreshChain, useVerifiedAt, type ChainEscrow } from '@/lib/chain';
+import {
+  sameAddress, sendEscrowTx, useChainState, useNow, usePendingWithdrawal, useRefreshChain, useVerifiedAt,
+  MOVE_IN_WINDOW_MS, DEPOSIT_REVIEW_MS, type ChainEscrow,
+} from '@/lib/chain';
+import { EscrowStatus } from '@/lib/contracts';
 import LandlordEscrowPanel from '@/components/LandlordEscrowPanel';
 import { bundlerClient } from '@/lib/wallet';
 import { encodeFunctionData } from 'viem';
@@ -46,10 +47,44 @@ interface MockListing {
   thumb: string | null;
   color: string;
   escrow?: ChainEscrow;
+  cover?: string;
+  photoCount: number;
+  hasVideo: boolean;
+}
+
+/** Nigerian number → international digits for wa.me (0803… → 234803…). Empty if it doesn't look valid. */
+function normalisePhone(raw: string): string {
+  const d = raw.replace(/\D/g, '');
+  const intl = d.startsWith('234') ? d : d.startsWith('0') ? `234${d.slice(1)}` : d;
+  return /^234\d{10}$/.test(intl) ? intl : '';
+}
+
+/** Escrow states where the landlord has something to do right now. */
+function needsLandlord(e: ChainEscrow, now: number) {
+  if (e.status === EscrowStatus.Pending) return e.handoverAt === 0 || now >= e.handoverAt + MOVE_IN_WINDOW_MS;
+  if (e.status === EscrowStatus.Ending) return now < e.endRequestedAt + DEPOSIT_REVIEW_MS;
+  return e.status === EscrowStatus.Disputed;
+}
+
+function listingStatus(e?: ChainEscrow): { label: string; tone: 'good' | 'warn' | 'neutral' } {
+  if (!e) return { label: 'Listed · waiting for a tenant', tone: 'neutral' };
+  switch (e.status) {
+    case EscrowStatus.Pending: return e.handoverAt ? { label: 'Keys handed over', tone: 'warn' } : { label: 'Tenant has paid', tone: 'warn' };
+    case EscrowStatus.Active: return { label: 'Rented', tone: 'good' };
+    case EscrowStatus.Ending: return { label: 'Tenant moving out', tone: 'warn' };
+    case EscrowStatus.Disputed: return { label: 'In dispute', tone: 'warn' };
+    default: return { label: 'Listed', tone: 'neutral' };
+  }
+}
+
+function Thumb({ cover, className }: { cover?: string; className: string }) {
+  return cover
+    ? <img src={cover} alt="" loading="lazy" className={`${className} object-cover`} />
+    : <div className={`${className} flex items-center justify-center`} style={{ background: 'var(--surface-muted)' }}><Home className="w-6 h-6" style={{ color: 'var(--subtle)' }} /></div>;
 }
 
 const LISTING_COLORS = [
-  'linear-gradient(135deg, #0a6638 0%, #14a85a 100%)',
+  'var(--accent)',
   'linear-gradient(135deg, #1e6b9e 0%, #3b9edd 100%)',
   'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)',
   'linear-gradient(135deg, #b45309 0%, #f59e0b 100%)',
@@ -79,6 +114,7 @@ export default function LandlordDashboard({ account }: Props) {
     rentNgn: '',
     depositNgn: '',
     amenities: [] as string[],
+    phone: '',
   });
   const [geoStatus, setGeoStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
@@ -88,6 +124,9 @@ export default function LandlordDashboard({ account }: Props) {
   const chain = useChainState();
   const refreshChain = useRefreshChain();
   const isVerified = (useVerifiedAt(account.address).data ?? 0) > 0;
+  const withdrawable = usePendingWithdrawal(account.address).data ?? 0;
+  const now = useNow();
+  const [withdrawing, setWithdrawing] = useState(false);
 
   // This landlord's listings, read from the escrow contract.
   const listings = useMemo<MockListing[]>(() => {
@@ -104,6 +143,9 @@ export default function LandlordDashboard({ account }: Props) {
         thumb: null,
         color: LISTING_COLORS[Number(l.id % BigInt(LISTING_COLORS.length))],
         escrow: escrows.get(l.escrowId),
+        cover: l.meta.media?.find(m => m.type === 'image')?.url,
+        photoCount: l.meta.media?.filter(m => m.type === 'image').length ?? 0,
+        hasVideo: !!l.meta.media?.some(m => m.type === 'video'),
       }));
   }, [chain.data, account.address]);
   const [showVerification, setShowVerification] = useState(false);
@@ -200,6 +242,7 @@ export default function LandlordDashboard({ account }: Props) {
         amenities: form.amenities,
         media: uploaded,
         ...(pin && { lat: pin.lat, lng: pin.lng }),
+        ...(normalisePhone(form.phone) && { phone: normalisePhone(form.phone) }),
       });
 
       const calldata = encodeFunctionData({
@@ -229,7 +272,7 @@ export default function LandlordDashboard({ account }: Props) {
   }
 
   function resetForm() {
-    setForm({ address: '', location: '', rooms: '2', propertyType: 'two_bed', furnishing: 'unfurnished', description: '', rentNgn: '', depositNgn: '', amenities: [] });
+    setForm({ address: '', location: '', rooms: '2', propertyType: 'two_bed', furnishing: 'unfurnished', description: '', rentNgn: '', depositNgn: '', amenities: [], phone: '' });
     setGeoStatus('idle');
     setPin(null);
     setMedia([]);
@@ -246,7 +289,7 @@ export default function LandlordDashboard({ account }: Props) {
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 320, damping: 18 }}
           className="w-20 h-20 rounded-full flex items-center justify-center mb-6"
-          style={{ background: 'linear-gradient(135deg, var(--success) 0%, #52e09b 100%)', boxShadow: '0 12px 40px rgba(26,128,71,0.3)' }}
+          style={{ background: 'var(--success)', boxShadow: '0 12px 40px rgba(26,128,71,0.3)' }}
         >
           <Check className="w-10 h-10 text-white" />
         </motion.div>
@@ -259,7 +302,7 @@ export default function LandlordDashboard({ account }: Props) {
             whileTap={{ scale: 0.97 }}
             onClick={resetForm}
             className="px-8 py-3.5 rounded-2xl font-semibold text-white"
-            style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 4px 20px var(--accent-glow)' }}
+            style={{ background: 'var(--accent)', boxShadow: 'none' }}
           >
             Back to Dashboard
           </motion.button>
@@ -271,7 +314,7 @@ export default function LandlordDashboard({ account }: Props) {
   // ── New listing form ──────────────────────────────────────────────────────
   if (view === 'new-listing') {
     return (
-      <div className="px-4 pt-4 pb-28">
+      <div className="max-w-2xl mx-auto px-4 pt-6 pb-28">
         {/* Back */}
         <motion.button
           whileTap={{ scale: 0.96 }}
@@ -455,6 +498,19 @@ export default function LandlordDashboard({ account }: Props) {
               </div>
             </div>
 
+            {/* ── Contact for inspections ── */}
+            <div>
+              <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>WhatsApp number for inspections</label>
+              <input
+                value={form.phone} inputMode="tel" autoComplete="tel"
+                onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/[^\d+ ]/g, '').slice(0, 18) }))}
+                placeholder="e.g. 0803 123 4567"
+                className="w-full px-4 py-3.5 rounded-2xl border text-sm outline-none"
+                style={{ background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--ink)' }}
+              />
+              <p className="text-xs mt-1.5" style={{ color: 'var(--subtle)' }}>Shown on your listing so tenants can book an inspection. Leave empty to keep it private.</p>
+            </div>
+
             {/* ── Bedrooms ── */}
             <div>
               <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Bedrooms</label>
@@ -467,7 +523,7 @@ export default function LandlordDashboard({ account }: Props) {
                     className="flex-1 py-3 rounded-2xl text-sm font-semibold border transition-all"
                     style={
                       form.rooms === n
-                        ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: '0 2px 12px var(--accent-glow)' }
+                        ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: 'none' }
                         : { background: 'var(--surface-strong)', color: 'var(--ink)', borderColor: 'var(--border)' }
                     }
                   >
@@ -488,7 +544,7 @@ export default function LandlordDashboard({ account }: Props) {
                     onClick={() => setForm(f => ({ ...f, propertyType: pt }))}
                     className="px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all"
                     style={form.propertyType === pt
-                      ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: '0 2px 8px var(--accent-glow)' }
+                      ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: 'none' }
                       : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
                     {t(pt as TranslationKey)}
                   </motion.button>
@@ -507,7 +563,7 @@ export default function LandlordDashboard({ account }: Props) {
                     onClick={() => setForm(frm => ({ ...frm, furnishing: fn }))}
                     className="flex-1 py-2.5 rounded-2xl text-xs font-semibold border transition-all"
                     style={form.furnishing === fn
-                      ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: '0 2px 8px var(--accent-glow)' }
+                      ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: 'none' }
                       : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
                     {t(fn as TranslationKey)}
                   </motion.button>
@@ -542,7 +598,7 @@ export default function LandlordDashboard({ account }: Props) {
                       className="px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all"
                       style={
                         active
-                          ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: '0 2px 8px var(--accent-glow)' }
+                          ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: 'none' }
                           : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }
                       }
                     >
@@ -582,7 +638,7 @@ export default function LandlordDashboard({ account }: Props) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Security Deposit (₦)</label>
+                <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Caution fee (₦, refundable)</label>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -625,9 +681,9 @@ export default function LandlordDashboard({ account }: Props) {
               className="w-full py-4 rounded-2xl font-semibold text-white text-base flex items-center justify-center gap-2 transition-all"
               style={{
                 background: isValid && !loading
-                  ? 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)'
+                  ? 'var(--accent)'
                   : 'var(--subtle)',
-                boxShadow: isValid && !loading ? '0 4px 20px var(--accent-glow)' : 'none',
+                boxShadow: isValid && !loading ? 'none' : 'none',
               }}
             >
               {loading
@@ -642,245 +698,220 @@ export default function LandlordDashboard({ account }: Props) {
   }
 
   // ── Home dashboard ─────────────────────────────────────────────────────────
-  const totalEarnings = listings.filter(l => l.status === 'rented').reduce((s, l) => s + l.rentNgn, 0);
-  const activeCount = listings.filter(l => l.status === 'active').length;
   const rentedCount = listings.filter(l => l.status === 'rented').length;
+  const attention = listings.filter(l => l.escrow && needsLandlord(l.escrow, now));
+  const annualRent = listings.filter(l => l.status === 'rented').reduce((s, l) => s + l.rentNgn, 0);
+
+  async function withdraw() {
+    setWithdrawing(true);
+    try {
+      await sendEscrowTx(account, { functionName: 'withdraw' });
+      await refreshChain();
+      toast.success('Rent withdrawn to your wallet.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg.includes('NotAllowedError') ? 'Passkey cancelled.' : 'Withdrawal failed. Please try again.');
+    } finally {
+      setWithdrawing(false);
+    }
+  }
+
+  const tile = { background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' };
 
   return (
-    <div className="px-4 pt-4 pb-28">
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+    <div className="max-w-6xl mx-auto px-4 pt-6 pb-28">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-2xl sm:text-[28px] font-bold" style={{ color: 'var(--ink)', letterSpacing: '-0.02em' }}>Your properties</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>No agents. Tenants pay into escrow and you keep 100% of the rent.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setDashTab('whatsapp')}
+            className="flex items-center gap-1.5 px-4 h-11 rounded-xl text-sm font-medium"
+            style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--border)' }}>
+            <MessageCircle className="w-4 h-4" /> List on WhatsApp
+          </button>
+          <button onClick={() => setView('new-listing')}
+            className="flex items-center gap-1.5 px-4 h-11 rounded-xl text-sm font-semibold text-white"
+            style={{ background: 'var(--accent)' }}>
+            <PlusCircle className="w-4 h-4" /> List a property
+          </button>
+        </div>
+      </div>
 
-        {/* Header row */}
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="display text-2xl font-bold" style={{ color: 'var(--ink)', letterSpacing: '-0.03em' }}>
-              Landlord Hub
-            </h2>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-              No agents. You keep 100% of rent.
-            </p>
+      {/* Summary */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        {[
+          { label: 'Listed', value: String(listings.length) },
+          { label: 'Rented', value: String(rentedCount) },
+          { label: 'Rent from tenants / yr', value: formatNaira(annualRent / USDC_TO_NGN) },
+        ].map(({ label, value }) => (
+          <div key={label} className="rounded-2xl p-4" style={tile}>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>{label}</p>
+            <p className="text-xl font-bold tabular-nums mt-1" style={{ color: 'var(--ink)' }}>{value}</p>
           </div>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setView('new-listing')}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl font-semibold text-white text-sm"
-            style={{
-              background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)',
-              boxShadow: '0 4px 16px var(--accent-glow)',
-            }}
-          >
-            <PlusCircle className="w-4 h-4" />
-            List
-          </motion.button>
+        ))}
+        <div className="rounded-2xl p-4 flex flex-col" style={tile}>
+          <p className="text-xs" style={{ color: 'var(--muted)' }}>Ready to withdraw</p>
+          <div className="flex items-center justify-between gap-2 mt-1">
+            <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(withdrawable)}</p>
+            {withdrawable > 0 && (
+              <button onClick={() => { void withdraw(); }} disabled={withdrawing}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60" style={{ background: 'var(--accent)' }}>
+                {withdrawing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Withdraw'}
+              </button>
+            )}
+          </div>
         </div>
+      </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          {[
-            { label: 'Properties', value: String(listings.length), icon: Building2 },
-            { label: 'Active', value: String(activeCount), icon: List },
-            { label: 'Rented', value: String(rentedCount), icon: BarChart3 },
-          ].map(({ label, value, icon: Icon }, i) => (
-            <motion.div
-              key={label}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06 }}
-              className="rounded-2xl p-3.5 glass-card"
-            >
-              <Icon className="w-4 h-4 mb-2" style={{ color: 'var(--accent)' }} />
-              <div className="display text-xl font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{value}</div>
-              <div className="text-[11px] mt-0.5 font-medium" style={{ color: 'var(--muted)' }}>{label}</div>
-            </motion.div>
-          ))}
-        </div>
+      {/* Needs your attention */}
+      {attention.length > 0 && (
+        <section className="mb-6">
+          <h2 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--ink)' }}>
+            Needs your attention
+            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'var(--accent)', color: 'white' }}>{attention.length}</span>
+          </h2>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {attention.map(l => (
+              <div key={l.id} className="rounded-2xl overflow-hidden" style={tile}>
+                <div className="flex items-center gap-3 px-4 pt-4">
+                  <Thumb cover={l.cover} className="w-12 h-12 rounded-lg" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate" style={{ color: 'var(--ink)' }}>{l.location}</p>
+                    <p className="text-xs" style={{ color: 'var(--muted)' }}>{l.rooms} bed · {formatNaira(l.rentNgn / USDC_TO_NGN)}/yr</p>
+                  </div>
+                </div>
+                <LandlordEscrowPanel escrow={l.escrow!} account={account} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-        {/* Earnings card */}
-        {listings.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-3xl p-5 mb-5 relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}
-          >
-            <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }} />
-            <p className="text-white/70 text-xs font-medium mb-1" style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              Est. Annual Earnings
-            </p>
-            <p className="display text-3xl font-bold text-white tabular-nums" style={{ letterSpacing: '-0.04em' }}>
-              {formatNaira(totalEarnings / 1600)}
-            </p>
-            <p className="text-white/60 text-xs mt-1">From {rentedCount} rented propert{rentedCount === 1 ? 'y' : 'ies'}</p>
+      {/* Account */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <button onClick={() => setShowVerification(true)}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium"
+          style={isVerified
+            ? { background: 'var(--accent-soft)', color: 'var(--success)', border: '1px solid var(--border)' }
+            : { background: 'rgba(242,180,90,0.10)', color: 'var(--warning)', border: '1px solid rgba(242,180,90,0.35)' }}>
+          {isVerified ? <BadgeCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+          {isVerified ? 'Identity verified' : 'Verify your identity — tenants trust verified landlords'}
+        </button>
+        {[
+          { label: t('maintenance'), icon: Wrench, onClick: () => setShowMaintenance(true) },
+          { label: t('reviews'), icon: Star, onClick: () => setShowReviews(true) },
+          { label: t('boost_listing'), icon: TrendingUp, onClick: () => { if (listings.length > 0) setShowBoost(listings[0].id); } },
+        ].map(({ label, icon: Icon, onClick }) => (
+          <button key={label} onClick={onClick}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm"
+            style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--border)' }}>
+            <Icon className="w-4 h-4" style={{ color: 'var(--muted)' }} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-6 mb-5" style={{ borderBottom: '1px solid var(--border)' }}>
+        {([
+          { id: 'listings' as DashTab, label: 'Properties' },
+          { id: 'whatsapp' as DashTab, label: 'List by WhatsApp' },
+          { id: 'stats' as DashTab, label: 'Insights' },
+        ]).map(tab => (
+          <button key={tab.id} onClick={() => setDashTab(tab.id)}
+            className="pb-3 -mb-px text-sm font-medium transition-colors"
+            style={dashTab === tab.id
+              ? { color: 'var(--ink)', borderBottom: '2px solid var(--ink)' }
+              : { color: 'var(--muted)', borderBottom: '2px solid transparent' }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <AnimatePresence mode="wait">
+        {dashTab === 'listings' && (
+          <motion.div key="listings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            {chain.isLoading ? (
+              <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
+            ) : listings.length === 0 ? (
+              <div className="rounded-2xl p-10 flex flex-col items-center text-center" style={{ border: '1px dashed var(--border-strong)' }}>
+                <Building2 className="w-8 h-8 mb-3" style={{ color: 'var(--subtle)' }} />
+                <p className="font-semibold" style={{ color: 'var(--ink)' }}>No properties yet</p>
+                <p className="text-sm mt-1 mb-5 max-w-sm" style={{ color: 'var(--muted)' }}>
+                  List your first property in a few minutes — or send the details to our WhatsApp bot.
+                </p>
+                <button onClick={() => setView('new-listing')} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: 'var(--accent)' }}>
+                  List a property
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {listings.map(l => {
+                  const status = listingStatus(l.escrow);
+                  return (
+                    <article key={l.id} className="rounded-2xl overflow-hidden flex flex-col" style={tile}>
+                      <div className="relative aspect-[4/3]" style={{ background: 'var(--surface-muted)' }}>
+                        <Thumb cover={l.cover} className="absolute inset-0 w-full h-full" />
+                        <span className="absolute top-3 left-3 text-[11px] font-semibold px-2 py-1 rounded-full text-white"
+                          style={{ background: status.tone === 'good' ? '#17803f' : status.tone === 'warn' ? '#a35a00' : 'rgba(0,0,0,0.65)' }}>
+                          {status.label}
+                        </span>
+                        {(l.photoCount > 1 || l.hasVideo) && (
+                          <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full bg-black/60 text-white">
+                            <ImagePlus className="w-3 h-3" /> {l.photoCount}{l.hasVideo ? ' · video' : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <p className="font-semibold text-[15px] truncate" style={{ color: 'var(--ink)' }}>{l.location}</p>
+                        <p className="text-sm mt-0.5 tabular-nums" style={{ color: 'var(--muted)' }}>
+                          {l.rooms} bed · <span style={{ color: 'var(--ink)' }} className="font-semibold">{formatNaira(l.rentNgn / USDC_TO_NGN)}</span>/yr
+                        </p>
+                      </div>
+                      {l.escrow && (
+                        <div className="mt-auto">
+                          <LandlordEscrowPanel escrow={l.escrow} account={account} compact={needsLandlord(l.escrow, now)} />
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </motion.div>
         )}
 
-        {/* Quick tools row */}
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {[
-            { label: isVerified ? 'Verified ✓' : t('verify_identity'), icon: isVerified ? BadgeCheck : CheckCircle2, onClick: () => setShowVerification(true), color: isVerified ? 'var(--success)' : 'var(--accent)', active: isVerified },
-            { label: t('maintenance'), icon: Home, onClick: () => setShowMaintenance(true), color: '#7c3aed' },
-            { label: t('reviews'), icon: TrendingUp, onClick: () => setShowReviews(true), color: '#f59e0b' },
-            { label: t('boost_listing').split(' ')[0], icon: BarChart3, onClick: () => listings.length > 0 ? setShowBoost(listings[0].id) : null, color: '#0e7490' },
-          ].map(item => (
-            <motion.button key={item.label} whileTap={{ scale: 0.93 }} onClick={item.onClick}
-              className="flex flex-col items-center gap-1.5 py-3 rounded-2xl text-[10px] font-semibold"
-              style={{ background: 'active' in item && item.active ? 'rgba(26,128,71,0.12)' : 'var(--glass-card)', backdropFilter: 'blur(24px)', border: `1px solid ${'active' in item && item.active ? 'var(--success)' : 'var(--glass-border)'}`, color: item.color }}>
-              <item.icon className="w-4 h-4" />
-              {item.label}
-            </motion.button>
-          ))}
-        </div>
+        {dashTab === 'whatsapp' && (
+          <motion.div key="whatsapp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="max-w-2xl">
+            <WhatsAppInbox account={account} />
+          </motion.div>
+        )}
 
-        {/* Tab bar */}
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-          {([
-            { id: 'listings' as DashTab, label: 'My Properties', icon: Building2 },
-            { id: 'whatsapp' as DashTab, label: 'WhatsApp', icon: MessageCircle },
-            { id: 'stats' as DashTab, label: 'Insights', icon: BarChart3 },
-          ]).map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setDashTab(tab.id)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-all shrink-0"
-              style={
-                dashTab === tab.id
-                  ? { background: 'var(--accent)', color: 'white', boxShadow: '0 2px 10px var(--accent-glow)' }
-                  : { background: 'var(--surface-strong)', color: 'var(--muted)', border: '1px solid var(--border)' }
-              }
-            >
-              <tab.icon className="w-3.5 h-3.5" />
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        <AnimatePresence mode="wait">
-          {dashTab === 'listings' && (
-            <motion.div
-              key="listings"
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -8 }}
-              transition={springs.snappy}
-            >
-              {listings.length === 0 ? (
-                <div
-                  className="rounded-3xl p-10 flex flex-col items-center text-center"
-                  style={{ background: 'var(--surface-muted)', border: '2px dashed var(--border)' }}
-                >
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-                    style={{ background: 'var(--accent-soft)' }}>
-                    <Building2 className="w-8 h-8" style={{ color: 'var(--accent)' }} />
-                  </div>
-                  <p className="font-bold text-sm mb-1" style={{ color: 'var(--ink)' }}>No properties yet</p>
-                  <p className="text-xs mb-5 max-w-xs" style={{ color: 'var(--muted)' }}>
-                    List your first property — tenants pay directly, zero agent.
-                  </p>
-                  <motion.button
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() => setView('new-listing')}
-                    className="px-6 py-3 rounded-2xl font-semibold text-white text-sm"
-                    style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 4px 16px var(--accent-glow)' }}
-                  >
-                    List a Property
-                  </motion.button>
+        {dashTab === 'stats' && (
+          <motion.div key="stats" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="rounded-2xl p-5 max-w-2xl" style={tile}>
+            <h3 className="font-semibold mb-3" style={{ color: 'var(--ink)' }}>Insights</h3>
+            {listings.length === 0 ? (
+              <p className="text-sm py-6 text-center" style={{ color: 'var(--muted)' }}>Stats appear once you list a property.</p>
+            ) : (
+              [
+                { label: 'Properties listed', value: String(listings.length) },
+                { label: 'Waiting for a tenant', value: String(listings.length - rentedCount) },
+                { label: 'With a tenant', value: String(rentedCount) },
+                { label: 'Rent from current tenants / yr', value: formatNaira(annualRent / USDC_TO_NGN) },
+                { label: 'Ready to withdraw', value: formatNaira(withdrawable) },
+              ].map(row => (
+                <div key={row.label} className="flex items-center justify-between py-2.5 text-sm" style={{ borderTop: '1px solid var(--border)' }}>
+                  <span style={{ color: 'var(--muted)' }}>{row.label}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: 'var(--ink)' }}>{row.value}</span>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {listings.map((l, i) => (
-                    <motion.div
-                      key={l.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.06 }}
-                      className="rounded-3xl overflow-hidden"
-                      style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid var(--glass-border)', boxShadow: 'var(--shadow-card)' }}
-                    >
-                      {l.thumb ? (
-                        <div className="h-32 overflow-hidden">
-                          <img src={l.thumb} alt={l.location} className="w-full h-full object-cover" />
-                        </div>
-                      ) : (
-                        <div className="h-24 relative overflow-hidden" style={{ background: l.color }}>
-                          <div className="absolute inset-0 opacity-10"
-                            style={{ backgroundImage: 'repeating-linear-gradient(45deg, white 0, white 1px, transparent 0, transparent 50%)', backgroundSize: '20px 20px' }} />
-                        </div>
-                      )}
-                      <div className="p-4 flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-sm" style={{ color: 'var(--ink)' }}>{l.location}</p>
-                          <p className="text-xs mt-0.5 tabular-nums" style={{ color: 'var(--muted)' }}>
-                            {l.rooms} bed · {formatNaira(l.rentNgn / 1600)}/yr
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="text-[10px] px-2.5 py-1 rounded-full font-semibold"
-                            style={{
-                              background: l.status === 'active' ? 'var(--accent-soft)' : 'rgba(26,128,71,0.12)',
-                              color: l.status === 'active' ? 'var(--accent)' : 'var(--success)',
-                            }}
-                          >
-                            {l.status === 'active' ? 'Active' : 'Rented'}
-                          </span>
-                          <Eye className="w-4 h-4" style={{ color: 'var(--subtle)' }} />
-                        </div>
-                      </div>
-                      {l.escrow && <LandlordEscrowPanel escrow={l.escrow} account={account} />}
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {dashTab === 'whatsapp' && (
-            <motion.div
-              key="whatsapp"
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -8 }}
-              transition={springs.snappy}
-            >
-              <WhatsAppInbox account={account} />
-            </motion.div>
-          )}
-
-          {dashTab === 'stats' && (
-            <motion.div
-              key="stats"
-              initial={{ opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -8 }}
-              transition={springs.snappy}
-              className="rounded-3xl p-5 space-y-4"
-              style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid var(--glass-border)', boxShadow: 'var(--shadow-card)' }}
-            >
-              <h3 className="font-bold" style={{ color: 'var(--ink)' }}>Property Insights</h3>
-              {listings.length === 0 ? (
-                <p className="text-sm text-center py-8" style={{ color: 'var(--muted)' }}>
-                  Stats will appear once you list a property.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {[
-                    { label: 'Total properties', value: String(listings.length) },
-                    { label: 'Active listings', value: String(activeCount) },
-                    { label: 'Properties rented', value: String(rentedCount) },
-                    { label: 'Est. annual rent', value: formatNaira(listings.reduce((s, l) => s + l.rentNgn, 0) / 1600) },
-                  ].map(row => (
-                    <div key={row.label} className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'var(--border)' }}>
-                      <span className="text-sm" style={{ color: 'var(--muted)' }}>{row.label}</span>
-                      <span className="font-bold tabular-nums text-sm" style={{ color: 'var(--ink)' }}>{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+              ))
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Feature modals */}
       <AnimatePresence>

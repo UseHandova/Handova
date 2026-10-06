@@ -98,7 +98,7 @@ const EN: Translations = {
   description_label: 'Description',
   amenities_label: 'Amenities',
   annual_rent: 'Annual Rent (₦)',
-  deposit: 'Security Deposit (₦)',
+  deposit: 'Caution Fee (₦, refundable)',
   submit_listing: 'List Property',
   listing_success: 'Listed Onchain!',
   listing_success_sub: 'Your property is now visible to tenants. Rent goes directly into escrow — no agent touch.',

@@ -38,15 +38,15 @@ export default function OnboardingWalkthrough({ role, onDone }: Props) {
   const [step, setStep] = useState(0);
 
   const tenantSteps: Step[] = [
-    { icon: Search, iconBg: 'linear-gradient(135deg, #0a6638 0%, #14a85a 100%)', title: t('onboarding_step1'), body: 'Filter by area, property type, and furnishing. All 50+ Lagos areas covered.' },
-    { icon: BadgeCheck, iconBg: 'linear-gradient(135deg, #1e6b9e 0%, #3b9edd 100%)', title: t('onboarding_step2'), body: 'Contact the landlord via WhatsApp, visit the property, and confirm you are satisfied before any money moves.' },
-    { icon: ShieldCheck, iconBg: 'linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)', title: t('onboarding_step3'), body: 'Rent is held in a smart contract. Released to the landlord only after you confirm move-in. Your deposit is also protected.' },
+    { icon: Search, iconBg: 'var(--accent)', title: t('onboarding_step1'), body: 'Filter by area, property type, and furnishing. All 50+ Lagos areas covered.' },
+    { icon: BadgeCheck, iconBg: 'var(--accent)', title: t('onboarding_step2'), body: 'Contact the landlord via WhatsApp, visit the property, and confirm you are satisfied before any money moves.' },
+    { icon: ShieldCheck, iconBg: 'var(--accent)', title: t('onboarding_step3'), body: 'Rent is held in a smart contract. Released to the landlord only after you confirm move-in. Your deposit is also protected.' },
   ];
 
   const landlordSteps: Step[] = [
-    { icon: Home, iconBg: 'linear-gradient(135deg, #0a6638 0%, #14a85a 100%)', title: 'List in 2 minutes', body: 'Add photos, set your price in Naira, and choose your property type. Your listing goes live onchain immediately.' },
-    { icon: ShieldCheck, iconBg: 'linear-gradient(135deg, #1e6b9e 0%, #3b9edd 100%)', title: 'Zero agent fees', body: 'Tenants pay directly to the smart contract. You receive 100% of rent — no middleman, no 10% agency cut.' },
-    { icon: BadgeCheck, iconBg: 'linear-gradient(135deg, #b45309 0%, #f59e0b 100%)', title: 'Boost for more views', body: 'Use Listing Boost to feature your property at the top. Pay a small USDC fee and get 5-8× more tenant inquiries.' },
+    { icon: Home, iconBg: 'var(--accent)', title: 'List in 2 minutes', body: 'Add photos, set your price in Naira, and choose your property type. Your listing goes live onchain immediately.' },
+    { icon: ShieldCheck, iconBg: 'var(--accent)', title: 'Zero agent fees', body: 'Tenants pay directly to the smart contract. You receive 100% of rent — no middleman, no 10% agency cut.' },
+    { icon: BadgeCheck, iconBg: 'var(--accent)', title: 'Boost for more views', body: 'Use Listing Boost to feature your property at the top. Pay a small USDC fee and get 5-8× more tenant inquiries.' },
   ];
 
   const steps = role === 'tenant' ? tenantSteps : landlordSteps;
@@ -132,7 +132,7 @@ export default function OnboardingWalkthrough({ role, onDone }: Props) {
             )}
             <motion.button whileTap={{ scale: 0.97 }} onClick={handleNext}
               className="flex-1 py-3 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-1.5"
-              style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 4px 16px var(--accent-glow)' }}>
+              style={{ background: 'var(--accent)', boxShadow: 'none' }}>
               {isLast ? t('onboarding_done') : t('onboarding_next')}
               {!isLast && <ArrowRight className="w-4 h-4" />}
             </motion.button>

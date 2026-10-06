@@ -235,7 +235,7 @@ export default function PropertyMap({ address, lat: initLat, lng: initLng, title
               whileTap={{ scale: 0.96 }}
               onClick={openGoogleMaps}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm text-white"
-              style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)', boxShadow: '0 4px 16px var(--accent-glow)' }}
+              style={{ background: 'var(--accent)', boxShadow: 'none' }}
             >
               <Navigation className="w-4 h-4" /> Open in Google Maps
             </motion.button>
@@ -362,9 +362,9 @@ export function PinDropMap({ onConfirm, onClose, initialAddress }: PinDropMapPro
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm text-white transition-all"
               style={{
                 background: pin
-                  ? 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)'
+                  ? 'var(--accent)'
                   : 'var(--subtle)',
-                boxShadow: pin ? '0 4px 16px var(--accent-glow)' : 'none',
+                boxShadow: pin ? 'none' : 'none',
               }}
             >
               <Check className="w-4 h-4" /> Confirm Location

@@ -102,7 +102,7 @@ export default function ReferralSystem({ address, onClose }: Props) {
         <div className="px-5 py-5 space-y-4">
           {/* Earnings card */}
           <div className="rounded-3xl p-5 relative overflow-hidden"
-            style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #14a85a 100%)' }}>
+            style={{ background: 'var(--accent)' }}>
             <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }} />
             <p className="text-white/70 text-xs font-semibold uppercase tracking-wider mb-1">Total Earned</p>
             <p className="display text-3xl font-bold text-white tabular-nums" style={{ letterSpacing: '-0.04em' }}>
@@ -141,7 +141,7 @@ export default function ReferralSystem({ address, onClose }: Props) {
           {/* Share via WhatsApp */}
           <motion.button whileTap={{ scale: 0.97 }} onClick={shareViaWhatsApp}
             className="w-full py-4 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2"
-            style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', boxShadow: '0 4px 16px rgba(37,211,102,0.3)' }}>
+            style={{ background: '#1fa855', boxShadow: '0 4px 16px rgba(37,211,102,0.3)' }}>
             Share via WhatsApp
           </motion.button>
 

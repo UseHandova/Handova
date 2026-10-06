@@ -194,5 +194,5 @@ export const ESCROW_STATUS_LABEL: Record<EscrowStatus, string> = {
   [EscrowStatus.Released]: 'Completed',
   [EscrowStatus.Refunded]: 'Refunded',
   [EscrowStatus.Disputed]: 'In Dispute',
-  [EscrowStatus.Ending]: 'Deposit Under Review',
+  [EscrowStatus.Ending]: 'Caution Fee Review',
 };

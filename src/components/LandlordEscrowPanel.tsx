@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Key, Loader2, ShieldCheck, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { toast } from 'sonner';
-import { EscrowStatus, ESCROW_STATUS_LABEL } from '@/lib/contracts';
+import { EscrowStatus } from '@/lib/contracts';
 import { formatNaira } from '@/lib/naira';
 import {
   canDispute, formatCountdown, sendEscrowTx, useNow, useRefreshChain,
@@ -17,6 +17,8 @@ import {
 interface Props {
   escrow: ChainEscrow;
   account: SmartAccount;
+  /** Status line only, no buttons (used when the same escrow is already shown with actions elsewhere). */
+  compact?: boolean;
 }
 
 type Action = 'markHandover' | 'claimMoveIn' | 'approveDepositReturn' | 'dispute';
@@ -30,7 +32,7 @@ const SUCCESS: Record<Action, string> = {
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-export default function LandlordEscrowPanel({ escrow, account }: Props) {
+export default function LandlordEscrowPanel({ escrow, account, compact = false }: Props) {
   const [acting, setActing] = useState<Action | null>(null);
   const refreshChain = useRefreshChain();
   const now = useNow();
@@ -56,10 +58,10 @@ export default function LandlordEscrowPanel({ escrow, account }: Props) {
         key={action}
         onClick={() => { void run(action); }}
         disabled={acting !== null}
-        className="flex-1 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-opacity disabled:opacity-60"
+        className={`${primary ? 'flex-1' : 'px-4'} h-10 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-opacity disabled:opacity-60`}
         style={primary
           ? { background: 'var(--accent)', color: 'white' }
-          : { background: 'rgba(245,158,11,0.08)', color: '#b45309', border: '1px solid rgba(245,158,11,0.2)' }}
+          : { background: 'transparent', color: 'var(--ink-2)', border: '1px solid var(--border-strong)' }}
       >
         {acting === action ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Icon className="w-3.5 h-3.5" />}
         {label}
@@ -104,18 +106,16 @@ export default function LandlordEscrowPanel({ escrow, account }: Props) {
   if (canDispute(escrow)) actions.push(button('dispute', 'Dispute', AlertTriangle));
 
   return (
-    <div className="mx-4 mb-4 p-3 rounded-2xl space-y-2.5" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-semibold" style={{ color: 'var(--ink)' }}>
-          Escrow #{String(escrow.id)} · {ESCROW_STATUS_LABEL[escrow.status]}
-        </span>
-        <span className="mono" style={{ color: 'var(--subtle)' }}>Tenant {short(escrow.tenant)}</span>
+    <div className="px-4 pb-4 pt-3 space-y-3" style={{ borderTop: '1px solid var(--border)' }}>
+      <div className="flex items-start gap-2 text-sm" style={{ color: 'var(--ink-2)' }}>
+        <Clock className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--muted)' }} />
+        <span className={compact ? 'line-clamp-2' : ''}>{note}</span>
       </div>
-      <div className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--muted)' }}>
-        <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-        <span>{note} {escrow.heldUsdc > 0 && <>Held: <b className="tabular-nums">{formatNaira(escrow.heldUsdc)}</b>.</>}</span>
-      </div>
-      {actions.length > 0 && <div className="flex gap-2">{actions}</div>}
+      {!compact && actions.length > 0 && <div className="flex gap-2">{actions}</div>}
+      <p className="text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
+        Tenant <span className="mono">{short(escrow.tenant)}</span>
+        {escrow.heldUsdc > 0 && <> · {formatNaira(escrow.heldUsdc)} held in escrow</>}
+      </p>
     </div>
   );
 }
