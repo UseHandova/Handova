@@ -30,7 +30,8 @@ import OpenAI from 'openai';
 import twilio from 'twilio';
 import { mountVerification } from './verification';
 import { mountMedia, saveRemoteMedia } from './media';
-import { mountModeration } from './moderation';
+import { mountAuth } from './auth';
+import { mountFeatures } from './features';
 import { openDrafts, type Draft } from './drafts';
 
 const app = express();
@@ -362,7 +363,8 @@ app.post('/api/bot/reject', (req, res) => {
 
 mountVerification(app);
 mountMedia(app);
-mountModeration(app);
+mountAuth(app);
+mountFeatures(app);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, ShieldCheck, CheckCircle2, Loader2, Download, AlertTriangle, Wrench, Clock } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Download, FileText, Loader2, ShieldCheck, Star, Wrench } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira } from '@/lib/naira';
 import { EscrowStatus, ESCROW_STATUS_LABEL } from '@/lib/contracts';
@@ -16,6 +16,9 @@ import {
 import { toast } from 'sonner';
 import LeasePdfExport from '@/components/LeasePdfExport';
 import DisputeEvidence from '@/components/DisputeEvidence';
+import TenantReviews from '@/components/TenantReviews';
+import { api } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
 import MaintenanceTracker from '@/components/MaintenanceTracker';
 
 
@@ -51,6 +54,7 @@ export default function MyLeases({ account, address }: Props) {
   const [pdfEscrow, setPdfEscrow] = useState<bigint | null>(null);
   const [disputeEscrow, setDisputeEscrow] = useState<bigint | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
+  const [rateEscrow, setRateEscrow] = useState<{ id: bigint; location: string } | null>(null);
   const chain = useChainState();
   const refreshChain = useRefreshChain();
   const now = useNow();
@@ -66,6 +70,16 @@ export default function MyLeases({ account, address }: Props) {
       depositUsdc: e.listing?.depositUsdc ?? 0,
       txHash: '',
     })), [chain.data, address]);
+
+  // Tenancies this tenant can still review (moved in, not yet reviewed) — checked by the server.
+  const movedInIds = escrows.filter(e => e.status !== EscrowStatus.Pending).map(e => String(e.id)).join(',');
+  const eligible = useQuery({
+    queryKey: ['review-eligible', address, movedInIds],
+    enabled: !!movedInIds && typeof account.signMessage === 'function',
+    retry: false,
+    staleTime: 60_000,
+    queryFn: async () => new Set((await api<{ escrowIds: string[] }>(account, `/api/reviews/eligible?escrowIds=${movedInIds}`)).escrowIds),
+  });
 
   async function run(escrowId: bigint, action: TenantAction) {
     setActing(escrowId);
@@ -204,6 +218,7 @@ export default function MyLeases({ account, address }: Props) {
                       {[
                         { label: 'Lease PDF', icon: Download, onClick: () => setPdfEscrow(escrow.id) },
                         { label: 'Request repair', icon: Wrench, onClick: () => setShowMaintenance(true) },
+                        ...(eligible.data?.has(String(escrow.id)) ? [{ label: 'Rate landlord', icon: Star, onClick: () => setRateEscrow({ id: escrow.id, location: escrow.location }) }] : []),
                         {
                           label: canDispute(escrow) ? 'Report a problem' : 'Evidence',
                           icon: AlertTriangle,
@@ -239,7 +254,16 @@ export default function MyLeases({ account, address }: Props) {
         {disputeEscrow !== null && (
           <DisputeEvidence key="dispute" escrowId={String(disputeEscrow)} onClose={() => setDisputeEscrow(null)} />
         )}
-        {showMaintenance && <MaintenanceTracker key="maint" role="tenant" onClose={() => setShowMaintenance(false)} />}
+        {showMaintenance && (
+          <MaintenanceTracker key="maint" role="tenant" account={account}
+            homes={escrows.filter(e => e.status === EscrowStatus.Active || e.status === EscrowStatus.Ending).map(e => ({ escrowId: String(e.id), label: e.location }))}
+            labels={Object.fromEntries(escrows.map(e => [String(e.id), e.location]))}
+            onClose={() => setShowMaintenance(false)} />
+        )}
+        {rateEscrow && (
+          <TenantReviews key="rate" mode="rate" account={account} escrowId={String(rateEscrow.id)} title={rateEscrow.location}
+            onClose={() => setRateEscrow(null)} />
+        )}
       </AnimatePresence>
     </div>
   );

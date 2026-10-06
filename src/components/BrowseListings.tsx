@@ -12,6 +12,7 @@ import { LAGOS_AREAS, PROPERTY_TYPES, type PropertyType } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import { nairaToUsdc } from '@/lib/naira';
 import { useChainState, useHiddenListings, type ChainListing } from '@/lib/chain';
+import { useBoosts } from '@/components/ListingBoost';
 import PropertyMap from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import InspectionFlow from '@/components/InspectionFlow';
@@ -149,14 +150,18 @@ export default function BrowseListings({ account }: Props) {
   const [showReferral, setShowReferral] = useState(false);
   const chain = useChainState();
   const hidden = useHiddenListings().data;
+  const boostsData = useBoosts().data;
+  const boosted = useMemo(() => new Set((boostsData?.boosts ?? []).map(b => b.listingId)), [boostsData]);
 
   // Live listings that aren't rented yet; samples only until the first real listing exists.
   const listings = useMemo(() => {
     const live = (chain.data?.listings ?? [])
       .filter(l => l.active && l.escrowId === 0n && !hidden?.has(String(l.id)))
-      .map(fromChain).reverse();
+      .map(fromChain).reverse()
+      // Boosted (paid, verified) listings first; otherwise newest first.
+      .sort((a, b) => Number(boosted.has(String(b.id))) - Number(boosted.has(String(a.id))));
     return live.length > 0 || !chain.isSuccess ? live : SAMPLE_LISTINGS;
-  }, [chain.data, chain.isSuccess, hidden]);
+  }, [chain.data, chain.isSuccess, hidden, boosted]);
   const showingSamples = listings[0]?.sample ?? false;
 
   const filtered = listings.filter(l => {
@@ -350,13 +355,13 @@ export default function BrowseListings({ account }: Props) {
         {shareListing && <ShareListing key="share-modal" listing={shareListing} onClose={() => setShareListing(null)} />}
       </AnimatePresence>
       <AnimatePresence>
-        {reviewListing && <TenantReviews key="review-modal" landlordName={reviewListing.title} mode="view" onClose={() => setReviewListing(null)} />}
+        {reviewListing && <TenantReviews key="review-modal" mode="view" landlord={reviewListing.landlord} title={reviewListing.title} onClose={() => setReviewListing(null)} />}
       </AnimatePresence>
       <AnimatePresence>
         {showSavedSearches && <SavedSearches key="saved-searches" onClose={() => setShowSavedSearches(false)} />}
       </AnimatePresence>
       <AnimatePresence>
-        {showReferral && <ReferralSystem key="referral" address={account.address} onClose={() => setShowReferral(false)} />}
+        {showReferral && <ReferralSystem key="referral" account={account} onClose={() => setShowReferral(false)} />}
       </AnimatePresence>
     </div>
   );

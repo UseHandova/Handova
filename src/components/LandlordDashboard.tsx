@@ -1055,8 +1055,10 @@ export default function LandlordDashboard({ account }: Props) {
             account={account}
             onClose={() => setShowBoost(null)} />
         )}
-        {showMaintenance && <MaintenanceTracker key="maint" role="landlord" onClose={() => setShowMaintenance(false)} />}
-        {showReviews && <TenantReviews key="reviews" landlordName="You" mode="view" onClose={() => setShowReviews(false)} />}
+        {showMaintenance && <MaintenanceTracker key="maint" role="landlord" account={account}
+          labels={Object.fromEntries(listings.filter(l => l.escrow).map(l => [String(l.escrow!.id), l.location]))}
+          onClose={() => setShowMaintenance(false)} />}
+        {showReviews && <TenantReviews key="reviews" mode="view" landlord={account.address} title="What your tenants say" onClose={() => setShowReviews(false)} />}
       </AnimatePresence>
     </div>
   );
