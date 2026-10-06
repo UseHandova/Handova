@@ -57,6 +57,18 @@ export default function App() {
     } catch { toast.error('Could not withdraw.'); }
   }
 
+  // Dev-only: /?preview=tenant renders the tenant view without a passkey (for screenshots). Stripped from production builds.
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === 'tenant') {
+    const stub = { address: '0x000000000000000000000000000000000000dEaD' } as SmartAccount;
+    return (
+      <div className="min-h-dvh" style={{ background: 'var(--bg-gradient)' }}>
+        <Header address={stub.address} pendingUsdc={0} onSignOut={() => undefined} onWithdraw={() => undefined}
+          role="tenant" onSwitchRole={() => undefined} onOpenAdmin={() => undefined} />
+        <BrowseListings account={stub} />
+        <TabBar active="browse" onChange={() => undefined} role="tenant" />
+      </div>
+    );
+  }
   if (!langChosen) return <LanguageWelcome />;
   if (!account) return <AuthGate onAuth={handleAuth} />;
 
@@ -153,10 +165,6 @@ export default function App() {
   // ── Main app ──────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-dvh" style={{ background: 'var(--bg-gradient)' }}>
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="orb-green" style={{ width: 300, height: 300, top: '15%', right: '-8%', opacity: 0.5 }} />
-        <div className="orb-gold" style={{ width: 260, height: 260, bottom: '20%', left: '-6%', opacity: 0.45 }} />
-      </div>
       <Header address={address} pendingUsdc={pendingUsdc}
         onSignOut={handleSignOut} onWithdraw={() => { void handleWithdraw(); }}
         role={role} onSwitchRole={() => setRole(null)}

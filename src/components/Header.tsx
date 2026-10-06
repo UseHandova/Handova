@@ -67,7 +67,7 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
             <motion.span
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
+              className="hidden sm:inline text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider"
               style={{ background: roleColor.bg, color: roleColor.text }}
             >
               {role}
@@ -77,7 +77,7 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
       </div>
 
       {/* Right: actions */}
-      <div className="flex items-center gap-1.5 relative">
+      <div className="flex items-center gap-1 sm:gap-1.5 relative">
         {/* Notifications */}
         <NotificationCenter address={address} />
 
@@ -107,8 +107,8 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
         {/* Language selector */}
         <LangSelector compact showMic={false} />
 
-        {/* Theme toggle */}
-        <ThemeToggle />
+        {/* Theme toggle — desktop only; phones follow the system theme */}
+        <div className="hidden sm:block"><ThemeToggle /></div>
 
         {/* Switch role */}
         {role && onSwitchRole && (

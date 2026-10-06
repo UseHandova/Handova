@@ -33,7 +33,7 @@ import TenantReviews from '@/components/TenantReviews';
 
 interface Props { account: SmartAccount; }
 
-type MediaItem = { id: string; type: 'image' | 'video'; url: string; name: string };
+type MediaItem = { id: string; type: 'image' | 'video'; url: string; name: string; file: File };
 type View = 'home' | 'new-listing';
 type DashTab = 'listings' | 'whatsapp' | 'stats';
 
@@ -149,6 +149,7 @@ export default function LandlordDashboard({ account }: Props) {
         type: f.type.startsWith('video/') ? 'video' : 'image',
         url,
         name: f.name,
+        file: f,
       });
     }
     setMedia(prev => [...prev, ...items]);
@@ -178,11 +179,16 @@ export default function LandlordDashboard({ account }: Props) {
       const rentRaw = parseAmount(5042002, rentUsdc.toFixed(6)).raw;
       const depositRaw = parseAmount(5042002, depositUsdc.toFixed(6)).raw;
 
-      const thumbs = media.slice(0, 3).map(m => ({
-        type: m.type,
-        url: m.type === 'image' ? m.url.slice(0, 200) : '__video__',
-        name: m.name,
-      }));
+      // Upload photos/videos first; the listing stores only their URLs.
+      const uploaded: { type: 'image' | 'video'; url: string }[] = [];
+      for (const m of media) {
+        const body = new FormData();
+        body.append('file', m.file);
+        const res = await fetch('/api/media', { method: 'POST', body });
+        const out = await res.json().catch(() => ({})) as { url?: string; type?: 'image' | 'video'; error?: string };
+        if (!res.ok || !out.url) throw new Error(out.error ?? `Could not upload ${m.name}.`);
+        uploaded.push({ type: out.type ?? m.type, url: out.url });
+      }
 
       const metadata = JSON.stringify({
         address: form.address,
@@ -192,8 +198,7 @@ export default function LandlordDashboard({ account }: Props) {
         furnishing: form.furnishing,
         description: form.description,
         amenities: form.amenities,
-        mediaCount: media.length,
-        thumbs,
+        media: uploaded,
         ...(pin && { lat: pin.lat, lng: pin.lng }),
       });
 
@@ -217,7 +222,7 @@ export default function LandlordDashboard({ account }: Props) {
       toast.success('Property listed onchain!');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes('NotAllowedError')) toast.error('Could not list property.');
+      if (!msg.includes('NotAllowedError')) toast.error(msg.startsWith('Could not upload') || msg.includes('under') ? msg : 'Could not list property.');
     } finally {
       setLoading(false);
     }
