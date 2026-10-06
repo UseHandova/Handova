@@ -43,7 +43,7 @@ const lagosDate = (ms: number) => new Date(ms + WAT); // read with getUTC*
 
 const fmt = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', ...opts });
 const dayFmt = fmt({ weekday: 'short', day: 'numeric', month: 'short' });
-const timeFmt = fmt({ hour: 'numeric', minute: '2-digit' });
+const timeFmt = fmt({ hour: 'numeric', minute: '2-digit', hour12: true });
 
 /** "Today, 10:00 am" / "Tomorrow, 2:00 pm" / "Thu 9 Oct, 11:00 am" */
 export function formatSlot(ms: number, now = Date.now()) {

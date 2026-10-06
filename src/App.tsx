@@ -66,13 +66,13 @@ export default function App() {
 
   async function handleWithdraw() {
     if (!account || !ESCROW_ADDRESS) return;
-    try {
-      toast.promise(sendEscrowTx(account, { functionName: 'withdraw' }).then(refreshChain), {
-        loading: 'Withdrawing USDC…',
-        success: 'USDC withdrawn to your wallet!',
-        error: 'Withdrawal failed.',
-      });
-    } catch { toast.error('Could not withdraw.'); }
+    const run = sendEscrowTx(account, { functionName: 'withdraw' }).then(refreshChain);
+    toast.promise(run, {
+      loading: 'Withdrawing USDC…',
+      success: 'USDC withdrawn to your wallet!',
+      error: (e: unknown) => /NotAllowedError|cancel/i.test(String(e)) ? 'Withdrawal cancelled — nothing was moved.' : 'Withdrawal failed — nothing was moved. Please try again.',
+    });
+    await run.catch(() => undefined); // the toast reports the outcome
   }
 
   // Dev-only: /?preview=tenant|leases|landlord|roles[&as=0x…] renders a screen without a passkey (for screenshots).
@@ -83,7 +83,7 @@ export default function App() {
     const stub = { address: new URLSearchParams(window.location.search).get('as') ?? '0x000000000000000000000000000000000000dEaD' } as SmartAccount;
     return <MainApp account={stub} address={stub.address} role={role} tab={tab} navigate={navigate}
       pendingUsdc={0} onSignOut={() => undefined} onWithdraw={() => undefined}
-      showOnboarding={false} onOnboardingDone={() => undefined} showAdmin={false} setShowAdmin={() => undefined} />;
+      showOnboarding={false} onOnboardingDone={() => undefined} showAdmin={showAdmin} setShowAdmin={setShowAdmin} />;
   }
   if (devPreview) {
     const params = new URLSearchParams(window.location.search);
