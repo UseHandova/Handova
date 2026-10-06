@@ -3,13 +3,15 @@
  *   POST /api/media        multipart field "file" → { url, type }
  *   GET  /api/media/:name  serves the stored file
  *
- * Files live on local disk (MEDIA_DIR, default server/uploads). Listing metadata onchain stores
- * only the returned URL, so moving to S3 / R2 / IPFS later only changes this module.
+ * Storage: an S3-compatible bucket (Cloudflare R2, AWS S3, Backblaze B2…) when MEDIA_S3_BUCKET is set —
+ * files are then served from MEDIA_PUBLIC_BASE_URL — otherwise local disk (MEDIA_DIR, default
+ * server/uploads) served by GET /api/media/:name. Listings store only the returned URL.
  */
 
 import express, { type Express, type Request, type Response } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'node:crypto';
+import { S3Client } from 'bun';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -24,6 +26,36 @@ const TYPES: Record<string, { ext: string; kind: 'image' | 'video'; maxBytes: nu
 const MAX_UPLOADS_PER_HOUR = 60;
 
 const mediaRoot = () => resolve(process.env.MEDIA_DIR || 'server/uploads');
+
+let s3: S3Client | null | undefined;
+function bucket(): S3Client | null {
+  if (s3 !== undefined) return s3;
+  const e = process.env;
+  s3 = e.MEDIA_S3_BUCKET && e.MEDIA_S3_ACCESS_KEY_ID && e.MEDIA_S3_SECRET_ACCESS_KEY && e.MEDIA_PUBLIC_BASE_URL
+    ? new S3Client({
+      bucket: e.MEDIA_S3_BUCKET,
+      accessKeyId: e.MEDIA_S3_ACCESS_KEY_ID,
+      secretAccessKey: e.MEDIA_S3_SECRET_ACCESS_KEY,
+      endpoint: e.MEDIA_S3_ENDPOINT || undefined,   // e.g. https://<account>.r2.cloudflarestorage.com
+      region: e.MEDIA_S3_REGION || undefined,
+    })
+    : null;
+  return s3;
+}
+
+/** Save a file to the bucket (if configured) or local disk; returns its public URL. */
+async function store(buf: Buffer, ext: string, mime: string): Promise<string> {
+  const name = `${randomBytes(12).toString('hex')}.${ext}`;
+  const b = bucket();
+  if (b) {
+    await b.write(`listings/${name}`, buf, { type: mime });
+    return `${process.env.MEDIA_PUBLIC_BASE_URL!.replace(/\/$/, '')}/listings/${name}`;
+  }
+  const root = mediaRoot();
+  mkdirSync(root, { recursive: true });
+  writeFileSync(`${root}/${name}`, buf);
+  return `/api/media/${name}`;
+}
 
 /**
  * Download a remote file (e.g. a photo a landlord sent on WhatsApp — Twilio media needs basic auth)
@@ -40,11 +72,7 @@ export async function saveRemoteMedia(url: string, auth?: { user: string; pass: 
     if (!res.ok || !type) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length > type.maxBytes) return null;
-    const root = mediaRoot();
-    mkdirSync(root, { recursive: true });
-    const name = `${randomBytes(12).toString('hex')}.${type.ext}`;
-    writeFileSync(`${root}/${name}`, buf);
-    return { url: `/api/media/${name}`, type: type.kind };
+    return { url: await store(buf, type.ext, mime), type: type.kind };
   } catch {
     return null;
   }
@@ -56,10 +84,7 @@ export function mountMedia(app: Express, dir?: string) {
   const perIp = new Map<string, { count: number; resetAt: number }>();
 
   const upload = multer({
-    storage: multer.diskStorage({
-      destination: root,
-      filename: (_req, file, cb) => cb(null, `${randomBytes(12).toString('hex')}.${TYPES[file.mimetype]?.ext ?? 'bin'}`),
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 60 * 1024 * 1024, files: 1 },
     fileFilter: (_req, file, cb) => cb(null, file.mimetype in TYPES),
   });
@@ -85,7 +110,12 @@ export function mountMedia(app: Express, dir?: string) {
       res.status(413).json({ error: type.kind === 'image' ? 'Photos must be under 10 MB.' : 'Videos must be under 60 MB.' });
       return;
     }
-    res.json({ url: `/api/media/${file.filename}`, type: type.kind });
+    store(file.buffer, type.ext, file.mimetype)
+      .then(url => res.json({ url, type: type.kind }))
+      .catch(err => {
+        console.error('[Media] Store failed:', err instanceof Error ? err.message : err);
+        res.status(502).json({ error: 'Could not save that file. Please try again.' });
+      });
   });
 
   // Only serve names we generated: 24 hex chars + known extension.

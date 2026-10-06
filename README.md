@@ -146,6 +146,10 @@ Optionally set a dedicated dispute arbiter (defaults to the deployer):
 cast send <ESCROW> "setArbiter(address)" <ARBITER> --rpc-url <ARC_RPC> --account <deployer>
 ```
 
+## Deployment
+
+See **[DEPLOY.md](DEPLOY.md)** — frontend on Vercel, API server via the `Dockerfile` (Railway/Render/Fly) with a persistent volume, optional Cloudflare R2 for media.
+
 ## Project structure
 
 ```
