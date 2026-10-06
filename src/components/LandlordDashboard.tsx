@@ -148,7 +148,14 @@ export default function LandlordDashboard({ account }: Props) {
         hasVideo: !!l.meta.media?.some(m => m.type === 'video'),
       }));
   }, [chain.data, account.address]);
-  const [showVerification, setShowVerification] = useState(false);
+  // Returning from Didit's hosted page (?verificationSessionId=…): reopen verification to collect the result.
+  const [diditReturn] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('verificationSessionId') ?? '';
+    if (id || params.has('kyc')) window.history.replaceState(null, '', window.location.pathname);
+    return /^[0-9a-f-]{36}$/i.test(id) ? id : '';
+  });
+  const [showVerification, setShowVerification] = useState(!!diditReturn);
   const [showBoost, setShowBoost] = useState<string | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [showReviews, setShowReviews] = useState(false);
@@ -915,7 +922,7 @@ export default function LandlordDashboard({ account }: Props) {
 
       {/* Feature modals */}
       <AnimatePresence>
-        {showVerification && <LandlordVerification key="verif" account={account} onClose={() => setShowVerification(false)} />}
+        {showVerification && <LandlordVerification key="verif" account={account} diditSessionId={diditReturn || undefined} onClose={() => setShowVerification(false)} />}
         {showBoost && (
           <ListingBoost key="boost"
             listingId={showBoost}

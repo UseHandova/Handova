@@ -41,6 +41,14 @@ export interface VerificationConfig {
   threshold: number;
   /** Dojah sandbox: no NIMC access, only Dojah's test NINs exist. */
   sandbox?: boolean;
+  /** Didit (free tier: ID document + liveness + face match via a hosted page). */
+  diditApiKey?: string;
+  diditWorkflowId?: string;
+  diditBaseUrl?: string;
+  /** Origins the Didit hosted page may send users back to (e.g. http://localhost:5175). */
+  appOrigins?: string[];
+  /** 'didit' | 'dojah'. Defaults to Didit when configured. */
+  provider?: 'didit' | 'dojah';
 }
 
 export function configFromEnv(env = process.env): VerificationConfig {
@@ -56,17 +64,28 @@ export function configFromEnv(env = process.env): VerificationConfig {
     dataFile: env.VERIFICATION_DATA_FILE || 'server/data/verifications.json',
     threshold: Number(env.KYC_MATCH_THRESHOLD || 90),
     sandbox: !env.DOJAH_BASE_URL && env.DOJAH_ENV !== 'production',
+    diditApiKey: env.DIDIT_API_KEY || undefined,
+    diditWorkflowId: env.DIDIT_WORKFLOW_ID || undefined,
+    diditBaseUrl: env.DIDIT_BASE_URL || 'https://verification.didit.me',
+    appOrigins: (env.APP_ORIGINS || [env.APP_URL, 'http://localhost:5175'].filter(Boolean).join(','))
+      .split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean),
+    provider: env.KYC_PROVIDER === 'dojah' || env.KYC_PROVIDER === 'didit' ? env.KYC_PROVIDER : undefined,
   };
 }
 
-interface Store { ninHashes: Record<string, Address> }
+interface Store {
+  /** HMAC of a government ID number (NIN or document number) → the one account it verified. */
+  ninHashes: Record<string, Address>;
+  /** Didit session id → account that started it (so a result can only credit that account). */
+  diditSessions?: Record<string, { address: Address; createdAt: number }>;
+}
 
 const CHALLENGE_TTL_MS = 10 * 60_000;
 const MAX_ATTEMPTS_PER_DAY = 5;
 const MAX_SELFIE_BYTES = 4 * 1024 * 1024;
 
 const challengeMessage = (address: Address, nonce: string, issuedAt: string) =>
-  `RentFlow identity verification\n\nI confirm I own this RentFlow account and consent to my NIN being checked with NIMC.\n\nAccount: ${address}\nNonce: ${nonce}\nIssued: ${issuedAt}`;
+  `RentFlow identity verification\n\nI confirm I own this RentFlow account and consent to my identity being checked.\n\nAccount: ${address}\nNonce: ${nonce}\nIssued: ${issuedAt}`;
 
 export function mountVerification(app: Express, config: VerificationConfig = configFromEnv()) {
   const chain = config.chain ?? arcTestnet;
@@ -90,10 +109,54 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     res.status(status).json({ ok: false, code, error, ...extra });
 
   const providerReady = () => !!(config.dojahAppId && config.dojahSecretKey);
+  const diditReady = () => !!(config.diditApiKey && config.diditWorkflowId);
   const chainReady = () => !!(walletClient && config.escrowAddress);
+  const activeProvider = (): 'didit' | 'dojah' | null =>
+    config.provider === 'dojah' ? (providerReady() ? 'dojah' : null)
+      : config.provider === 'didit' ? (diditReady() ? 'didit' : null)
+        : diditReady() ? 'didit' : providerReady() ? 'dojah' : null;
+
+  /** Checks a single-use challenge signed by `address` (EOA, ERC-1271 or ERC-6492). Returns an error tuple or null. */
+  async function checkOwnership(address: unknown, nonce: unknown, signature: unknown): Promise<[number, string, string] | null> {
+    if (typeof address !== 'string' || !isAddress(address)) return [400, 'bad_address', 'Invalid account address.'];
+    const challenge = typeof nonce === 'string' ? challenges.get(nonce) : undefined;
+    if (typeof nonce === 'string') challenges.delete(nonce);
+    if (!challenge || challenge.expiresAt < Date.now() || challenge.address.toLowerCase() !== address.toLowerCase()) {
+      return [401, 'bad_challenge', 'Your verification session expired. Please try again.'];
+    }
+    if (typeof signature !== 'string' || !isHex(signature)) return [401, 'bad_signature', 'Could not confirm you own this account.'];
+    let signed = false;
+    try { signed = await publicClient.verifyMessage({ address, message: challenge.message, signature }); } catch { signed = false; }
+    return signed ? null : [401, 'bad_signature', 'Could not confirm you own this account.'];
+  }
+
+  /** Per-account daily attempt limit. Returns true when the caller is over the limit. */
+  function overLimit(address: string): boolean {
+    const key = address.toLowerCase();
+    const now = Date.now();
+    const a = attempts.get(key);
+    if (a && a.resetAt > now && a.count >= MAX_ATTEMPTS_PER_DAY) return true;
+    attempts.set(key, !a || a.resetAt < now ? { count: 1, resetAt: now + 86_400_000 } : { ...a, count: a.count + 1 });
+    return false;
+  }
+
+  /** Write the badge onchain and remember which account this identity verified. */
+  async function recordVerified(address: Address, idHash: string): Promise<Hex> {
+    const txHash = await walletClient!.writeContract({
+      address: config.escrowAddress!, abi: ESCROW_VERIFY_ABI, functionName: 'setVerified', args: [address, true],
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== 'success') throw new Error('setVerified reverted');
+    const store = loadStore();
+    store.ninHashes[idHash] = address;
+    saveStore(store);
+    console.log(`[Verify] ${address} verified onchain (${txHash})`);
+    return txHash;
+  }
 
   app.get('/api/verify/config', (_req, res) => {
-    res.json({ provider: providerReady() ? 'dojah' : null, onchain: chainReady(), sandbox: !!config.sandbox });
+    const provider = activeProvider();
+    res.json({ provider, onchain: chainReady(), sandbox: provider === 'dojah' && !!config.sandbox });
   });
 
   app.get('/api/verify/challenge', (req: Req, res: Res) => {
@@ -109,6 +172,7 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     const { address, nonce, signature, nin, selfie } = (req.body ?? {}) as Record<string, unknown>;
 
     if (typeof address !== 'string' || !isAddress(address)) return fail(res, 400, 'bad_address', 'Invalid account address.');
+    if (activeProvider() === 'didit') return fail(res, 409, 'use_didit', 'Please use the new verification flow — refresh the page.');
     if (typeof nin !== 'string' || !/^\d{11}$/.test(nin)) return fail(res, 400, 'bad_nin', 'Your NIN must be exactly 11 digits.');
     if (typeof selfie !== 'string' || !selfie) return fail(res, 400, 'bad_selfie', 'Please take a selfie.');
     const selfieB64 = selfie.replace(/^data:image\/[a-z]+;base64,/, '');
@@ -117,29 +181,15 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     }
 
     // 1. Wallet ownership — single-use challenge signed by the account.
-    const challenge = typeof nonce === 'string' ? challenges.get(nonce) : undefined;
-    if (typeof nonce === 'string') challenges.delete(nonce);
-    if (!challenge || challenge.expiresAt < Date.now() || challenge.address.toLowerCase() !== address.toLowerCase()) {
-      return fail(res, 401, 'bad_challenge', 'Your verification session expired. Please try again.');
-    }
-    if (typeof signature !== 'string' || !isHex(signature)) return fail(res, 401, 'bad_signature', 'Could not confirm you own this account.');
-    let signed = false;
-    try {
-      signed = await publicClient.verifyMessage({ address, message: challenge.message, signature });
-    } catch { signed = false; }
-    if (!signed) return fail(res, 401, 'bad_signature', 'Could not confirm you own this account.');
+    const ownership = await checkOwnership(address, nonce, signature);
+    if (ownership) return fail(res, ...ownership);
 
     if (!providerReady()) return fail(res, 503, 'not_configured', 'Identity verification is not available yet. Please try again later.');
     if (!chainReady()) return fail(res, 503, 'not_configured', 'Identity verification is not available yet. Please try again later.');
 
     // 2. Rate limit per account.
     const key = address.toLowerCase();
-    const now = Date.now();
-    const a = attempts.get(key);
-    if (a && a.resetAt > now && a.count >= MAX_ATTEMPTS_PER_DAY) {
-      return fail(res, 429, 'too_many_attempts', 'Too many attempts today. Please try again tomorrow.');
-    }
-    attempts.set(key, !a || a.resetAt < now ? { count: 1, resetAt: now + 86_400_000 } : { ...a, count: a.count + 1 });
+    if (overLimit(address)) return fail(res, 429, 'too_many_attempts', 'Too many attempts today. Please try again tomorrow.');
 
     // 3. One NIN ↔ one account.
     const store = loadStore();
@@ -185,15 +235,103 @@ export function mountVerification(app: Express, config: VerificationConfig = con
 
     // 5. Record onchain, then remember the NIN hash.
     try {
-      const txHash = await walletClient!.writeContract({
-        address: config.escrowAddress!, abi: ESCROW_VERIFY_ABI, functionName: 'setVerified', args: [address, true],
-      });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-      if (receipt.status !== 'success') throw new Error('setVerified reverted');
-      store.ninHashes[hash] = address;
-      saveStore(store);
-      console.log(`[Verify] ${address} verified onchain (${txHash})`);
+      const txHash = await recordVerified(address, hash);
       res.json({ ok: true, txHash, firstName: body.entity.first_name ?? null });
+    } catch (err) {
+      console.error('[Verify] Onchain write failed:', err instanceof Error ? err.message : err);
+      return fail(res, 502, 'chain_error', 'You passed the check, but we could not save your badge. Please try again.');
+    }
+  });
+
+  // ── Didit: hosted ID document + liveness + face match ─────────────────────
+  interface DiditFeature { status?: string; score?: number; document_type?: string; document_number?: string; personal_number?: string; full_name?: string; issuing_state?: string }
+  interface DiditDecision {
+    status?: string; vendor_data?: string;
+    id_verifications?: DiditFeature[] | null; liveness_checks?: DiditFeature[] | null; face_matches?: DiditFeature[] | null;
+  }
+
+  const didit = (path: string, init: RequestInit = {}) => fetch(`${config.diditBaseUrl}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': config.diditApiKey!, ...(init.headers ?? {}) },
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  /** Start a hosted verification for a wallet the caller proved they own. */
+  app.post('/api/verify/didit/session', express.json(), async (req: Req, res: Res) => {
+    const { address, nonce, signature, returnTo } = (req.body ?? {}) as Record<string, unknown>;
+    const ownership = await checkOwnership(address, nonce, signature);
+    if (ownership) return fail(res, ...ownership);
+    const account = address as Address;
+    if (!diditReady() || !chainReady()) return fail(res, 503, 'not_configured', 'Identity verification is not available yet. Please try again later.');
+
+    const already = await publicClient.readContract({ address: config.escrowAddress!, abi: ESCROW_VERIFY_ABI, functionName: 'verifiedAt', args: [account] }).catch(() => 0n);
+    if (already > 0n) return res.json({ ok: true, alreadyVerified: true });
+    if (overLimit(account)) return fail(res, 429, 'too_many_attempts', 'Too many attempts today. Please try again tomorrow.');
+
+    // Only send people back to our own app.
+    const origin = typeof returnTo === 'string' ? returnTo.replace(/\/$/, '') : '';
+    const back = config.appOrigins?.includes(origin) ? origin : config.appOrigins?.[0];
+    const r = await didit('/v3/session/', {
+      method: 'POST',
+      body: JSON.stringify({
+        workflow_id: config.diditWorkflowId, vendor_data: account,
+        callback: back ? `${back}/?kyc=didit` : undefined, metadata: { app: 'rentflow' },
+      }),
+    }).catch(() => null);
+    const body = await r?.json().catch(() => ({})) as { session_id?: string; url?: string; detail?: string } | undefined;
+    if (!r || !r.ok || !body?.session_id || !body.url) {
+      console.error(`[Verify] Didit session failed (HTTP ${r?.status ?? 'network'})`, body?.detail ?? '');
+      return fail(res, r?.status === 401 || r?.status === 403 ? 503 : 502, 'provider_error', 'Could not start verification. Please try again.');
+    }
+    const store = loadStore();
+    store.diditSessions = { ...(store.diditSessions ?? {}), [body.session_id]: { address: account, createdAt: Date.now() } };
+    saveStore(store);
+    res.json({ ok: true, url: body.url, sessionId: body.session_id });
+  });
+
+  /** After the hosted flow: read Didit's decision and, if approved, record the badge onchain. */
+  app.post('/api/verify/didit/complete', express.json(), async (req: Req, res: Res) => {
+    const { sessionId } = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof sessionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(sessionId)) return fail(res, 400, 'bad_session', 'Invalid verification session.');
+    if (!diditReady() || !chainReady()) return fail(res, 503, 'not_configured', 'Identity verification is not available yet. Please try again later.');
+    const session = loadStore().diditSessions?.[sessionId];
+    if (!session) return fail(res, 404, 'unknown_session', 'We could not find that verification. Please start again.');
+
+    const r = await didit(`/v3/session/${sessionId}/decision/`).catch(() => null);
+    const d = await r?.json().catch(() => ({})) as DiditDecision | undefined;
+    if (!r || !r.ok || !d) return fail(res, 502, 'provider_error', 'Could not read the verification result. Please try again.');
+    if ((d.vendor_data ?? '').toLowerCase() !== session.address.toLowerCase()) return fail(res, 409, 'session_mismatch', 'This verification belongs to a different account.');
+
+    const status = d.status ?? '';
+    if (status === 'In Review') return res.status(202).json({ ok: false, code: 'in_review', error: 'Your documents are being reviewed by a person. This usually takes a few minutes — check back soon.' });
+    if (['Not Started', 'In Progress', 'Awaiting User', 'Resubmitted'].includes(status)) return fail(res, 409, 'not_finished', 'Verification isn\'t finished yet. Complete the steps on the verification page.');
+    if (['Expired', 'Abandoned', 'Kyc Expired'].includes(status)) return fail(res, 410, 'expired', 'That verification expired. Please start again.');
+
+    const doc = d.id_verifications?.[0];
+    const failed = [
+      doc?.status !== 'Approved' && 'your ID document',
+      d.liveness_checks?.[0] && d.liveness_checks[0].status !== 'Approved' && 'the liveness check',
+      d.face_matches?.[0] && d.face_matches[0].status !== 'Approved' && 'matching your face to your ID',
+    ].filter(Boolean);
+    if (status !== 'Approved' || failed.length) {
+      return fail(res, 422, 'declined', `Verification didn't pass${failed.length ? ` (${failed.join(', ')})` : ''}. Use a clear photo of a valid ID and follow the selfie steps in good light.`);
+    }
+
+    // One identity document ↔ one account.
+    const idNumber = (doc?.personal_number || doc?.document_number || '').replace(/\s/g, '').toUpperCase();
+    if (!idNumber) return fail(res, 422, 'declined', 'We could not read the number on your ID. Please try again with a clearer photo.');
+    const idHash = ninHash(`${doc?.issuing_state ?? ''}:${idNumber}`);
+    const linked = loadStore().ninHashes[idHash];
+    if (linked && linked.toLowerCase() !== session.address.toLowerCase()) {
+      return fail(res, 409, 'nin_in_use', 'This ID is already linked to another RentFlow account.');
+    }
+
+    try {
+      const txHash = await recordVerified(session.address, idHash);
+      const store = loadStore();
+      if (store.diditSessions) delete store.diditSessions[sessionId];
+      saveStore(store);
+      res.json({ ok: true, txHash, firstName: (doc?.full_name ?? '').split(' ')[0] || null });
     } catch (err) {
       console.error('[Verify] Onchain write failed:', err instanceof Error ? err.message : err);
       return fail(res, 502, 'chain_error', 'You passed the check, but we could not save your badge. Please try again.');
