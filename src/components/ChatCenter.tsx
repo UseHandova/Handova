@@ -261,7 +261,7 @@ function Thread({ account, id, initial, onBack, onClose }: { account: SmartAccou
                   style={m.fromMe ? { background: 'var(--accent)', color: 'white', borderBottomRightRadius: 6 } : { background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)', borderBottomLeftRadius: 6 }}>
                   {m.body}
                   <span className="block text-[10px] text-right mt-0.5" style={{ opacity: 0.7 }}>
-                    {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(m.createdAt)}
+                    {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(m.createdAt)}
                   </span>
                 </div>
               </div>

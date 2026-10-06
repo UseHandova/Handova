@@ -66,7 +66,7 @@ export function scamHint(body: string): string | null {
 export function shortTime(ms: number, now = Date.now()) {
   const day = (t: number) => Math.floor((t + 3600_000) / 86_400_000);
   const d = day(now) - day(ms);
-  if (d === 0) return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(ms);
+  if (d === 0) return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(ms);
   if (d === 1) return 'Yesterday';
   return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short' }).format(ms);
 }

@@ -53,7 +53,7 @@ export function normalisePhone(raw: unknown): string {
 
 /** "Tue 7 Oct, 10:00 am" in Lagos time, for messages. */
 export const lagosTime = (ms: number) => new Intl.DateTimeFormat('en-NG', {
-  timeZone: 'Africa/Lagos', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+  timeZone: 'Africa/Lagos', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
 }).format(ms);
 
 export function ensureInspectionsTable() {
