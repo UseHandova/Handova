@@ -108,7 +108,19 @@ bun run contracts:test
 
 For WhatsApp, point your Twilio sandbox webhook at `https://<your-host>/api/whatsapp/incoming` (use ngrok in development).
 
-### After deploying a new escrow
+### Deploying the contracts
+
+One command deploys the escrow, deploys the NFT pointing at it, and links them:
+
+```bash
+cast wallet import rentflow-deployer --interactive   # paste your testnet private key once; stored encrypted
+forge script contracts/script/DeployRentFlow.s.sol \
+  --rpc-url https://rpc.testnet.arc.network --account rentflow-deployer --broadcast
+```
+
+The deployer needs about 0.25 testnet USDC for gas ([faucet.circle.com](https://faucet.circle.com)). Copy the two printed addresses into `VITE_ESCROW_ADDRESS` / `VITE_NFT_ADDRESS`.
+
+### Manual setup (only if you deploy without the script)
 
 The owner must link the NFT contract once, otherwise move-in will revert:
 
