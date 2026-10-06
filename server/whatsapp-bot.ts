@@ -31,6 +31,7 @@ import twilio from 'twilio';
 import { mountVerification } from './verification';
 import { mountMedia, saveRemoteMedia } from './media';
 import { mountModeration } from './moderation';
+import { openDrafts, type Draft } from './drafts';
 
 const app = express();
 const PORT = 3001;
@@ -65,29 +66,13 @@ const twilioClient = twilio(
 
 // ── In-memory pending listings queue ─────────────────────────────────────────
 // In production, replace with a real database.
-interface PendingListing {
-  id: string;
-  code: string;          // 6-digit claim code sent to the landlord on WhatsApp
-  from: string;          // WhatsApp phone number
-  location: string;
-  rooms: number;
-  rentNgn: number;
-  depositNgn: number;
-  description: string;
-  amenities: string[];
-  mediaUrls: string[];   // Twilio media URLs (need auth — never shown to users)
-  media: { type: 'image' | 'video'; url: string }[];  // copies in our media store, shown on the listing
-  rawMessage: string;
-  parsedAt: number;
-  status: 'pending' | 'published' | 'rejected';
-}
-
-const pendingListings: PendingListing[] = [];
+type PendingListing = Draft;
+const drafts = openDrafts();
 
 function newClaimCode(): string {
   for (;;) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    if (!pendingListings.some(l => l.code === code && l.status === 'pending')) return code;
+    if (!drafts.codeInUse(code)) return code;
   }
 }
 
@@ -202,7 +187,27 @@ function twimlReply(message: string): string {
 }
 
 // ── POST /api/whatsapp/incoming — Twilio webhook ──────────────────────────────
+/**
+ * Only accept webhooks Twilio actually signed (X-Twilio-Signature = HMAC of the public URL + params with
+ * our auth token). Twilio signs the URL configured in the console, so behind a tunnel/proxy we rebuild it
+ * from the forwarded host/proto — or set PUBLIC_WEBHOOK_URL explicitly.
+ */
+function isFromTwilio(req: express.Request): boolean {
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!token || process.env.TWILIO_VALIDATE_SIGNATURE === 'false') return true;
+  const signature = req.header('x-twilio-signature') ?? '';
+  const proto = (req.header('x-forwarded-proto') ?? req.protocol).split(',')[0].trim();
+  const host = req.header('x-forwarded-host') ?? req.header('host') ?? '';
+  const url = process.env.PUBLIC_WEBHOOK_URL || `${proto}://${host}${req.originalUrl}`;
+  return twilio.validateRequest(token, signature, url, (req.body ?? {}) as Record<string, string>);
+}
+
 app.post('/api/whatsapp/incoming', async (req, res) => {
+  if (!isFromTwilio(req)) {
+    console.error('[RentFlow Bot] Rejected webhook with an invalid Twilio signature');
+    res.status(403).send('Invalid signature');
+    return;
+  }
   try {
     // Validate Twilio signature in production
     const body = req.body as Record<string, string>;
@@ -280,7 +285,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
       parsedAt: Date.now(),
       status: 'pending',
     };
-    pendingListings.unshift(listing);
+    drafts.insert(listing);
 
     // Send confirmation back to landlord
     const rentFormatted = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(parsed.rentNgn);
@@ -301,16 +306,16 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
 app.get('/api/bot/draft/:code', (req, res) => {
   const ip = req.ip ?? 'unknown';
   if (tooManyFailures(ip)) { res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' }); return; }
-  const listing = pendingListings.find(l => l.code === req.params.code && l.status === 'pending');
+  const listing = drafts.pendingByCode(req.params.code);
   if (!listing) { recordFailure(ip); res.status(404).json({ error: 'Code not found or already used.' }); return; }
   res.json(publicDraft(listing));
 });
 
 // ── POST /api/bot/draft/:code/published — landlord published it onchain ───────
 app.post('/api/bot/draft/:code/published', async (req, res) => {
-  const listing = pendingListings.find(l => l.code === req.params.code && l.status === 'pending');
+  const listing = drafts.pendingByCode(req.params.code);
   if (!listing) { res.status(404).json({ error: 'Code not found or already used.' }); return; }
-  listing.status = 'published';
+  drafts.setStatus(listing.id, 'published');
   // Best-effort WhatsApp confirmation. Twilio may refuse free-text business messages (it can require a
   // pre-approved template — "ContentSid Required"), so report whether it actually went out.
   let notified = false;
@@ -338,31 +343,7 @@ app.get('/api/bot/pending', (req, res) => {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
-  res.json(pendingListings.filter(l => l.status === 'pending'));
-});
-
-// ── POST /api/bot/approve — mark a listing as published ───────────────────────
-app.post('/api/bot/approve', (req, res) => {
-  const secret = req.headers['x-bot-secret'];
-  if (secret !== process.env.BOT_SECRET) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-  const { id } = req.body as { id?: string };
-  const listing = pendingListings.find(l => l.id === id);
-  if (!listing) { res.status(404).json({ error: 'Not found' }); return; }
-  listing.status = 'published';
-
-  // Optionally notify the landlord via WhatsApp
-  if (process.env.TWILIO_WHATSAPP_NUMBER && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-    twilioClient.messages.create({
-      from: process.env.TWILIO_WHATSAPP_NUMBER,
-      to: listing.from,
-      body: `🎉 Your property in ${listing.location} is now LIVE on RentFlow! Tenants can find it directly — no agent fee.`,
-    }).catch(() => { /* non-critical */ });
-  }
-
-  res.json({ ok: true, listing });
+  res.json(drafts.listPending());
 });
 
 // ── POST /api/bot/reject ──────────────────────────────────────────────────────
@@ -373,9 +354,9 @@ app.post('/api/bot/reject', (req, res) => {
     return;
   }
   const { id } = req.body as { id?: string };
-  const listing = pendingListings.find(l => l.id === id);
+  const listing = typeof id === 'string' ? drafts.byId(id) : null;
   if (!listing) { res.status(404).json({ error: 'Not found' }); return; }
-  listing.status = 'rejected';
+  drafts.setStatus(listing.id, 'rejected');
   res.json({ ok: true });
 });
 

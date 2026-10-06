@@ -16,7 +16,7 @@
     "server": "bun run server/whatsapp-bot.ts",
     "start": "bun run server/whatsapp-bot.ts",
     "test:verify": "forge build && bun test server/verification.e2e.test.ts",
-    "typecheck:server": "tsc --ignoreConfig --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2022 --strict --types node server/verification.ts server/media.ts server/moderation.ts server/whatsapp-bot.ts"
+    "typecheck:server": "tsc --ignoreConfig --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2022 --strict --types node,bun server/verification.ts server/media.ts server/moderation.ts server/drafts.ts server/whatsapp-bot.ts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.18.0",
@@ -59,6 +59,7 @@
     "viem": "^2.56.3"
   },
   "devDependencies": {
+    "@types/bun": "^1.4.2",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.3.0",
