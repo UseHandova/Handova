@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BadgeCheck, X, Loader2, AlertCircle, Shield, Camera, ExternalLink } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
@@ -46,6 +47,11 @@ export default function LandlordVerification({ account, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [txHash, setTxHash] = useState('');
+  const kycConfig = useQuery({
+    queryKey: ['verify-config'],
+    queryFn: async () => (await fetch('/api/verify/config')).json() as Promise<{ provider: string | null; sandbox?: boolean }>,
+    staleTime: 60_000,
+  });
 
   const isVerified = (verifiedAt.data ?? 0) > 0;
   const canSubmit = /^\d{11}$/.test(nin) && !!selfie && consent && !submitting;
@@ -149,6 +155,15 @@ export default function LandlordVerification({ account, onClose }: Props) {
                     only a "verified" mark on your account.
                   </p>
                 </div>
+
+                {kycConfig.data?.sandbox && (
+                  <div className="px-4 py-3 rounded-2xl text-xs leading-relaxed"
+                    style={{ background: 'rgba(242,180,90,0.10)', border: '1px solid rgba(242,180,90,0.35)', color: 'var(--ink-2)' }}>
+                    <b style={{ color: 'var(--warning)' }}>Test mode.</b> Real NINs can't be checked yet. Use the test NIN{' '}
+                    <button type="button" onClick={() => setNin('70123456789')} className="mono font-semibold underline" style={{ color: 'var(--ink)' }}>70123456789</button>{' '}
+                    and any selfie. Please don't enter your real NIN until launch.
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>NIN (11 digits)</label>

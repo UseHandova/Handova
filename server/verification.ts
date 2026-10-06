@@ -39,6 +39,8 @@ export interface VerificationConfig {
   dataFile: string;
   /** Minimum face-match confidence (Dojah default is 90). */
   threshold: number;
+  /** Dojah sandbox: no NIMC access, only Dojah's test NINs exist. */
+  sandbox?: boolean;
 }
 
 export function configFromEnv(env = process.env): VerificationConfig {
@@ -53,6 +55,7 @@ export function configFromEnv(env = process.env): VerificationConfig {
     ninPepper: env.NIN_PEPPER || createHash('sha256').update(`rentflow-nin:${verifierPrivateKey ?? ''}`).digest('hex'),
     dataFile: env.VERIFICATION_DATA_FILE || 'server/data/verifications.json',
     threshold: Number(env.KYC_MATCH_THRESHOLD || 90),
+    sandbox: !env.DOJAH_BASE_URL && env.DOJAH_ENV !== 'production',
   };
 }
 
@@ -90,7 +93,7 @@ export function mountVerification(app: Express, config: VerificationConfig = con
   const chainReady = () => !!(walletClient && config.escrowAddress);
 
   app.get('/api/verify/config', (_req, res) => {
-    res.json({ provider: providerReady() ? 'dojah' : null, onchain: chainReady() });
+    res.json({ provider: providerReady() ? 'dojah' : null, onchain: chainReady(), sandbox: !!config.sandbox });
   });
 
   app.get('/api/verify/challenge', (req: Req, res: Res) => {
@@ -168,6 +171,9 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     }
     if (dojah.status === 429) return fail(res, 429, 'provider_busy', 'The verification service is busy. Please try again in a minute.');
     if (!dojah.ok || !body.entity) {
+      if (config.sandbox) {
+        return fail(res, 422, 'sandbox_nin', 'RentFlow is in test mode, which can\'t check real NINs yet. Use the test NIN 70123456789 for now — real NIN checks switch on at launch.');
+      }
       return fail(res, 422, 'nin_not_found', 'We could not find that NIN. Check the number on your NIN slip and try again.');
     }
     const match = body.entity.selfie_verification;
