@@ -1,5 +1,5 @@
 /**
- * Authenticated calls to the RentFlow server. The first call signs one challenge with the passkey
+ * Authenticated calls to the Handova server. The first call signs one challenge with the passkey
  * wallet (a single Face ID / fingerprint prompt) and gets a 7-day session token; later calls reuse it.
  */
 
@@ -19,7 +19,7 @@ function stored(address: string): string | null {
 
 async function signIn(account: SmartAccount): Promise<string> {
   const ch = await fetch(`/api/auth/challenge?address=${account.address}`);
-  if (!ch.ok) throw new Error('Could not reach RentFlow. Check your connection.');
+  if (!ch.ok) throw new Error('Could not reach Handova. Check your connection.');
   const { nonce, message } = await ch.json() as { nonce: string; message: string };
   const signature = await account.signMessage({ message });
   const res = await fetch('/api/auth/session', {

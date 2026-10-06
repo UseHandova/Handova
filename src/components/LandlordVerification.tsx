@@ -3,7 +3,7 @@
  * Provider (from /api/verify/config):
  *   - didit: hosted ID document + liveness + face match; we redirect there and collect the decision on return
  *   - dojah: NIN + selfie sent through our server for an NIMC lookup and face match
- * The badge is public and survives devices. RentFlow never stores the ID number or photos.
+ * The badge is public and survives devices. Handova never stores the ID number or photos.
  */
 
 import { useState } from 'react';
@@ -226,12 +226,12 @@ export default function LandlordVerification({ account, onClose, diditSessionId 
                           <li>Photo of your NIN slip, national ID, driver's licence or passport</li>
                           <li>A short selfie video to prove it's really you</li>
                         </ol>
-                        <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>Done securely by our partner Didit. RentFlow keeps only a "verified" mark — not your ID or photos.</p>
+                        <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>Done securely by our partner Didit. Handova keeps only a "verified" mark — not your ID or photos.</p>
                       </div>
                     </div>
                     <label className="flex items-start gap-2.5 text-xs cursor-pointer" style={{ color: 'var(--muted)' }}>
                       <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
-                      <span>I agree that RentFlow's partner Didit may check my ID document and selfie to verify my identity.</span>
+                      <span>I agree that Handova's partner Didit may check my ID document and selfie to verify my identity.</span>
                     </label>
                     {error && (
                       <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs" role="alert"
@@ -289,7 +289,7 @@ export default function LandlordVerification({ account, onClose, diditSessionId 
 
                 <label className="flex items-start gap-2.5 text-xs cursor-pointer" style={{ color: 'var(--muted)' }}>
                   <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
-                  <span>I agree that RentFlow may check my NIN and selfie with NIMC through Dojah to verify my identity.</span>
+                  <span>I agree that Handova may check my NIN and selfie with NIMC through Dojah to verify my identity.</span>
                 </label>
 
                 {error && (

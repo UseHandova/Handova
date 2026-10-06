@@ -1,5 +1,5 @@
 /**
- * AdminDashboard — internal admin panel for RentFlow operators.
+ * AdminDashboard — internal admin panel for Handova operators.
  * Platform stats, listing moderation and dispute resolution — all real (chain + server).
  * Accessible only to the escrow's onchain arbiter.
  */

@@ -5,7 +5,7 @@
  *   1. GET  /api/verify/challenge?address=0x…  → one-time message for the landlord's wallet to sign
  *   2. POST /api/verify  { address, nonce, signature, nin, selfie }
  *        - proves the caller controls `address` (EOA, ERC-1271 or ERC-6492 smart-account signature)
- *        - one NIN can verify only one RentFlow account (stored as an HMAC, never the raw NIN)
+ *        - one NIN can verify only one Handova account (stored as an HMAC, never the raw NIN)
  *        - Dojah checks the NIN with NIMC and face-matches the selfie against the NIN photo
  *        - on a match the verifier key calls RentFlowEscrow.setVerified(address, true)
  *
@@ -85,7 +85,7 @@ const MAX_ATTEMPTS_PER_DAY = 5;
 const MAX_SELFIE_BYTES = 4 * 1024 * 1024;
 
 const challengeMessage = (address: Address, nonce: string, issuedAt: string) =>
-  `RentFlow identity verification\n\nI confirm I own this RentFlow account and consent to my identity being checked.\n\nAccount: ${address}\nNonce: ${nonce}\nIssued: ${issuedAt}`;
+  `Handova identity verification\n\nI confirm I own this Handova account and consent to my identity being checked.\n\nAccount: ${address}\nNonce: ${nonce}\nIssued: ${issuedAt}`;
 
 export function mountVerification(app: Express, config: VerificationConfig = configFromEnv()) {
   const chain = config.chain ?? arcTestnet;
@@ -196,7 +196,7 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     const hash = ninHash(nin);
     const linked = store.ninHashes[hash];
     if (linked && linked.toLowerCase() !== key) {
-      return fail(res, 409, 'nin_in_use', 'This NIN is already linked to another RentFlow account.');
+      return fail(res, 409, 'nin_in_use', 'This NIN is already linked to another Handova account.');
     }
 
     // 4. Dojah: NIN lookup + selfie face match.
@@ -222,7 +222,7 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     if (dojah.status === 429) return fail(res, 429, 'provider_busy', 'The verification service is busy. Please try again in a minute.');
     if (!dojah.ok || !body.entity) {
       if (config.sandbox) {
-        return fail(res, 422, 'sandbox_nin', 'RentFlow is in test mode, which can\'t check real NINs yet. Use the test NIN 70123456789 for now — real NIN checks switch on at launch.');
+        return fail(res, 422, 'sandbox_nin', 'Handova is in test mode, which can\'t check real NINs yet. Use the test NIN 70123456789 for now — real NIN checks switch on at launch.');
       }
       return fail(res, 422, 'nin_not_found', 'We could not find that NIN. Check the number on your NIN slip and try again.');
     }
@@ -324,7 +324,7 @@ export function mountVerification(app: Express, config: VerificationConfig = con
     const idHash = ninHash(`${doc?.issuing_state ?? ''}:${idNumber}`);
     const linked = loadStore().ninHashes[idHash];
     if (linked && linked.toLowerCase() !== session.address.toLowerCase()) {
-      return out(409, 'nin_in_use', 'This ID is already linked to another RentFlow account.');
+      return out(409, 'nin_in_use', 'This ID is already linked to another Handova account.');
     }
 
     try {

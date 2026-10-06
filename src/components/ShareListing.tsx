@@ -24,7 +24,7 @@ export default function ShareListing({ listing, onClose }: Props) {
   const slug = listing.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   const shareUrl = `${window.location.origin}/?listing=${slug}-${listing.id}`;
 
-  const shareText = `${listing.title} — ${listing.address}\n${formatNaira(listing.rentUsdc)}/yr · No agent fee · Verified escrow\nView on RentFlow: ${shareUrl}`;
+  const shareText = `${listing.title} — ${listing.address}\n${formatNaira(listing.rentUsdc)}/yr · No agent fee · Verified escrow\nView on Handova: ${shareUrl}`;
 
   function copyLink() {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -39,7 +39,7 @@ export default function ShareListing({ listing, onClose }: Props) {
   }
 
   function shareTwitter() {
-    const tweet = `${listing.title} at ${listing.location} — ${formatNaira(listing.rentUsdc)}/yr. No agent fee. Book inspection via @RentFlowNG ${shareUrl}`;
+    const tweet = `${listing.title} at ${listing.location} — ${formatNaira(listing.rentUsdc)}/yr. No agent fee. Book an inspection on Handova ${shareUrl}`;
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(tweet)}`, '_blank');
   }
 

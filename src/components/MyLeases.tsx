@@ -34,7 +34,7 @@ const SUCCESS: Record<TenantAction, string> = {
   confirmMoveIn: 'Move-in confirmed! Rent released to landlord. Your NFT lease certificate has been minted.',
   endTenancy: 'Move-out recorded. Your landlord has 7 days to inspect — if they don\'t dispute, your deposit comes back to you.',
   claimDeposit: 'Deposit credited — tap Withdraw in the header.',
-  dispute: 'Dispute opened. Upload your evidence so the RentFlow team can review.',
+  dispute: 'Dispute opened. Upload your evidence so the Handova team can review.',
 };
 
 
@@ -97,7 +97,7 @@ export default function MyLeases({ account, address }: Props) {
     }
   }
 
-  if (chain.isLoading) {
+  if (chain.isLoading || (chain.isError && !chain.data)) {
     return (
       <div className="flex justify-center py-24">
         <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} />
@@ -119,7 +119,7 @@ export default function MyLeases({ account, address }: Props) {
           <FileText className="w-8 h-8 mb-3" style={{ color: 'var(--subtle)' }} />
           <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('no_leases')}</p>
           <p className="text-sm mt-1 max-w-sm" style={{ color: 'var(--muted)' }}>
-            When you rent a home on RentFlow, your payment, move-in and caution fee are tracked here.
+            When you rent a home on Handova, your payment, move-in and caution fee are tracked here.
           </p>
         </div>
       ) : (
@@ -147,7 +147,7 @@ export default function MyLeases({ account, address }: Props) {
                   : { text: `Your landlord is inspecting. If they don't raise an issue, you can claim your caution fee in ${formatCountdown(reviewDeadline, now)}.` };
                 break;
               case EscrowStatus.Disputed:
-                next = { text: 'In dispute. The RentFlow team is reviewing evidence from both sides.' };
+                next = { text: 'In dispute. The Handova team is reviewing evidence from both sides.' };
                 break;
               default:
                 next = { text: status === EscrowStatus.Refunded ? 'Settled. Money owed to you is ready to withdraw from the top bar.' : 'This tenancy is complete.' };

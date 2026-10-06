@@ -1,5 +1,5 @@
 /**
- * RentFlow E2E Unit Test Suite
+ * Handova E2E Unit Test Suite
  * Tests all critical logic paths without a browser DOM.
  * Run with: bun test src/test/e2e.test.ts
  */
@@ -251,7 +251,7 @@ describe('notification model', () => {
   const DEMO: Notification[] = [
     { id: '1', type: 'inspection', title: 'Inspection booked', body: 'A tenant booked an inspection for your Yaba property.', read: false, timestamp: Date.now() - 3600000 },
     { id: '2', type: 'payment', title: 'Rent received', body: 'Escrow #4 payment confirmed.', read: false, timestamp: Date.now() - 7200000 },
-    { id: '3', type: 'system', title: 'Welcome to RentFlow', body: 'List your first property.', read: true, timestamp: Date.now() - 86400000 },
+    { id: '3', type: 'system', title: 'Welcome to Handova', body: 'List your first property.', read: true, timestamp: Date.now() - 86400000 },
   ];
 
   test('countUnread = 2', () => expect(countUnread(DEMO)).toBe(2));

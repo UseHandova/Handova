@@ -97,7 +97,7 @@ export default function TenantReviews(props: Props) {
                 placeholder="How was it renting from this landlord? Repairs, water, power, honesty about the house…"
                 className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none"
                 style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)', color: 'var(--ink)' }} />
-              <p className="text-xs" style={{ color: 'var(--subtle)' }}>Only tenants who moved in through RentFlow can review, once per tenancy. Reviews show with a "Verified tenant" mark.</p>
+              <p className="text-xs" style={{ color: 'var(--subtle)' }}>Only tenants who moved in through Handova can review, once per tenancy. Reviews show with a "Verified tenant" mark.</p>
               <button onClick={() => { void submit(); }} disabled={saving || rating === 0 || body.trim().length < 10}
                 className="w-full h-12 rounded-xl font-semibold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-50"
                 style={{ background: 'var(--accent)' }}>
@@ -109,7 +109,7 @@ export default function TenantReviews(props: Props) {
           ) : reviews.isLoading ? (
             <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
           ) : !reviews.data?.count ? (
-            <p className="text-sm text-center py-8" style={{ color: 'var(--muted)' }}>No reviews yet. Tenants can review after moving in through RentFlow.</p>
+            <p className="text-sm text-center py-8" style={{ color: 'var(--muted)' }}>No reviews yet. Tenants can review after moving in through Handova.</p>
           ) : (
             <>
               <div className="flex items-center gap-3">

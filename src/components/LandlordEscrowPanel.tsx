@@ -27,7 +27,7 @@ const SUCCESS: Record<Action, string> = {
   markHandover: 'Handover recorded. The tenant has 3 days to confirm or raise an issue.',
   claimMoveIn: 'Move-in finalised. Rent is ready to withdraw.',
   approveDepositReturn: 'Deposit returned to the tenant.',
-  dispute: 'Dispute opened. Upload evidence so the RentFlow team can review.',
+  dispute: 'Dispute opened. Upload evidence so the Handova team can review.',
 };
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -97,7 +97,7 @@ export default function LandlordEscrowPanel({ escrow, account, compact = false }
       if (now < reviewDeadline) actions.push(button('approveDepositReturn', 'Return deposit', ShieldCheck, true));
       break;
     case EscrowStatus.Disputed:
-      note = `In dispute. The RentFlow team will decide; if nobody acts, it splits 50/50 in ${formatCountdown(escrow.disputedAt + DISPUTE_TIMEOUT_MS, now)}.`;
+      note = `In dispute. The Handova team will decide; if nobody acts, it splits 50/50 in ${formatCountdown(escrow.disputedAt + DISPUTE_TIMEOUT_MS, now)}.`;
       break;
     default:
       note = 'Tenancy closed.';

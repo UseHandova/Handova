@@ -1,5 +1,5 @@
 /**
- * Minimal router over the History API — RentFlow only needs a handful of paths:
+ * Minimal router over the History API — Handova only needs a handful of paths:
  *   /                  role picker (or redirect to the last role)
  *   /tenant            browse homes          /tenant/leases       my leases
  *   /landlord          your properties       /landlord/new        list a property

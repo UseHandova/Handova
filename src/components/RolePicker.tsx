@@ -31,7 +31,7 @@ export default function RolePicker({ onPick }: Props) {
           <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent)' }}>
             <Home className="w-4 h-4 text-white" />
           </div>
-          <span className="font-semibold" style={{ color: 'var(--ink)' }}>RentFlow</span>
+          <span className="font-semibold" style={{ color: 'var(--ink)' }}>Handova</span>
         </div>
         <div className="flex items-center gap-2">
           <LangSelector compact showMic={false} />

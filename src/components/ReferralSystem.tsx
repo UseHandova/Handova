@@ -52,8 +52,8 @@ export default function ReferralSystem({ account, onClose }: Props) {
     try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { toast.error('Could not copy.'); }
   }
   function share() {
-    const text = `Find a home in Lagos without paying agent fees — rent goes into escrow until you move in. Join RentFlow: ${link}`;
-    if (navigator.share) void navigator.share({ title: 'RentFlow', text }).catch(() => undefined);
+    const text = `Find a home in Lagos without paying agent fees — rent goes into escrow until you move in. Join Handova: ${link}`;
+    if (navigator.share) void navigator.share({ title: 'Handova', text }).catch(() => undefined);
     else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   }
 

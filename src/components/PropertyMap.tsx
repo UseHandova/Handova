@@ -53,7 +53,7 @@ async function nominatimSearch(q: string): Promise<GeoResult | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=ng&viewbox=${LAGOS_VIEWBOX}&bounded=0`;
     const res = await fetch(url, {
-      headers: { 'Accept-Language': 'en', 'User-Agent': 'RentFlowApp/1.0 contact@rentflow.ng' },
+      headers: { 'Accept-Language': 'en', 'User-Agent': 'HandovaApp/1.0 (+https://github.com/Gbangbolaoluwagbemiga/rentflow)' },
     });
     if (!res.ok) return null;
     const data = await res.json() as Array<{ lat: string; lon: string; display_name: string }>;

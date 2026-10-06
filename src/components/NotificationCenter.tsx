@@ -62,7 +62,7 @@ function tenantNotice(e: ChainEscrow, now: number): Notification | null {
         : { id: id('review'), type: 'review', title: 'Deposit under review', body: `Your landlord is inspecting ${place(e)}. If they don't dispute, you can claim your deposit in ${formatCountdown(due, now)}.`, createdAt: at(e.endRequestedAt) };
     }
     case EscrowStatus.Disputed:
-      return { id: id('dispute'), type: 'dispute', title: 'Dispute open', body: `The tenancy at ${place(e)} is in dispute. Upload your evidence so the RentFlow team can decide.`, createdAt: at(e.disputedAt) };
+      return { id: id('dispute'), type: 'dispute', title: 'Dispute open', body: `The tenancy at ${place(e)} is in dispute. Upload your evidence so the Handova team can decide.`, createdAt: at(e.disputedAt) };
     default:
       return { id: id('closed'), type: 'done', title: 'Tenancy closed', body: `Your tenancy at ${place(e)} is settled. Any money owed to you is ready to withdraw.`, createdAt: e.createdAt };
   }
@@ -83,7 +83,7 @@ function landlordNotice(e: ChainEscrow, now: number): Notification | null {
         ? { id: id('review'), type: 'review', title: 'Tenant moved out', body: `Inspect ${place(e)} within ${formatCountdown(e.endRequestedAt + DEPOSIT_REVIEW_MS, now)}: return the deposit or dispute it.`, createdAt: e.endRequestedAt }
         : null;
     case EscrowStatus.Disputed:
-      return { id: id('dispute'), type: 'dispute', title: 'Dispute open', body: `The tenancy at ${place(e)} is in dispute. Upload your evidence so the RentFlow team can decide.`, createdAt: e.disputedAt || e.createdAt };
+      return { id: id('dispute'), type: 'dispute', title: 'Dispute open', body: `The tenancy at ${place(e)} is in dispute. Upload your evidence so the Handova team can decide.`, createdAt: e.disputedAt || e.createdAt };
     default:
       return null;
   }

@@ -16,7 +16,7 @@ const en = {
   homes: 'homes', home: 'home', sample: 'sample',
   filters: 'Filters', per_year_btn: 'Per year', per_month_btn: 'Per month',
   verified_only: 'Verified landlords only',
-  samples_notice: "No homes are listed yet, so these are sample listings to show how RentFlow works. They can't be rented.",
+  samples_notice: "No homes are listed yet, so these are sample listings to show how Handova works. They can't be rented.",
   no_match: 'No homes match these filters', no_match_sub: 'Try another area, or clear the filters.', clear_filters: 'Clear filters',
   loading_listings: 'Loading listings…',
   // Card / trust
@@ -25,10 +25,10 @@ const en = {
   trust_verified_title: 'Verified landlord',
   trust_verified_body: 'Identity checked with an official ID and a live selfie on {date}. Recorded onchain — it can\'t be faked.',
   trust_unverified_title: 'Landlord not verified yet',
-  trust_unverified_body: "RentFlow hasn't checked this landlord's identity. Inspect the property in person, and only pay through RentFlow escrow — never by bank transfer.",
+  trust_unverified_body: "Handova hasn't checked this landlord's identity. Inspect the property in person, and only pay through Handova escrow — never by bank transfer.",
   // Detail
   protected_title: 'How your money is protected',
-  protect_1: 'You pay rent + caution fee into the RentFlow escrow — not to the landlord.',
+  protect_1: 'You pay rent + caution fee into the Handova escrow — not to the landlord.',
   protect_2: "Rent is released to the landlord only after you confirm you've moved in.",
   protect_3: "Your caution fee comes back after you move out, unless there's a damage dispute.",
   rent_year: 'Rent (1 year)', caution_refundable: 'Caution fee (refundable)', agent_fee: 'Agent fee',
@@ -48,7 +48,7 @@ const en = {
   lease_pdf: 'Lease PDF', request_repair: 'Request repair', report_problem: 'Report a problem', rate_landlord_btn: 'Rate landlord',
   no_leases: 'No leases yet',
   // Role picker
-  how_use: 'How will you use RentFlow?',
+  how_use: 'How will you use Handova?',
   tenant_p1: 'Browse homes with photos and video', tenant_p2: 'Pay into escrow, not to a stranger', tenant_p3: 'Get your caution fee back',
   landlord_p1: 'List in minutes — or by WhatsApp voice note', landlord_p2: 'Get rent the day your tenant moves in', landlord_p3: 'No agent taking a cut',
 };
@@ -61,7 +61,7 @@ const pcm: Partial<Record<UiKey, string>> = {
   homes: 'houses', home: 'house', sample: 'sample',
   filters: 'Filter', per_year_btn: 'Per year', per_month_btn: 'Per month',
   verified_only: 'Only verified landlord',
-  samples_notice: 'No house don list yet, so na sample we dey show you make you see how RentFlow work. You no fit rent dem.',
+  samples_notice: 'No house don list yet, so na sample we dey show you make you see how Handova work. You no fit rent dem.',
   no_match: 'No house match wetin you choose', no_match_sub: 'Try another area, or clear the filter.', clear_filters: 'Clear filter',
   loading_listings: 'E dey load houses…',
   verified_landlord_pill: 'Verified landlord', not_verified_pill: 'Landlord never verify', sample_pill: 'Sample house',
@@ -69,9 +69,9 @@ const pcm: Partial<Record<UiKey, string>> = {
   trust_verified_title: 'Verified landlord',
   trust_verified_body: 'We check this landlord ID and selfie on {date}. E dey onchain — nobody fit fake am.',
   trust_unverified_title: 'Landlord never verify',
-  trust_unverified_body: 'RentFlow never check who this landlord be. Go see the house with your eye, and pay only through RentFlow escrow — no do bank transfer.',
+  trust_unverified_body: 'Handova never check who this landlord be. Go see the house with your eye, and pay only through Handova escrow — no do bank transfer.',
   protected_title: 'How we take protect your money',
-  protect_1: 'You go pay rent + caution enter RentFlow escrow — no be to landlord hand.',
+  protect_1: 'You go pay rent + caution enter Handova escrow — no be to landlord hand.',
   protect_2: 'Landlord go collect rent only after you confirm say you don pack enter.',
   protect_3: 'Your caution go come back after you pack comot, unless dem talk say you spoil something.',
   rent_year: 'Rent (1 year)', caution_refundable: 'Caution (e go return)', agent_fee: 'Agent fee',
@@ -88,7 +88,7 @@ const pcm: Partial<Record<UiKey, string>> = {
   moved_in_btn: 'I don pack enter', moving_out_btn: 'I wan pack comot', claim_caution: 'Collect my caution',
   lease_pdf: 'Lease PDF', request_repair: 'Report spoil thing', report_problem: 'Report wahala', rate_landlord_btn: 'Rate landlord',
   no_leases: 'You never rent any house',
-  how_use: 'How you wan use RentFlow?',
+  how_use: 'How you wan use Handova?',
   tenant_p1: 'See houses with picture and video', tenant_p2: 'Pay enter escrow, no be to stranger', tenant_p3: 'Collect your caution back',
   landlord_p1: 'List house sharp sharp — or send WhatsApp voice note', landlord_p2: 'Collect rent the day tenant pack enter', landlord_p3: 'No agent go chop your money',
 };
@@ -99,7 +99,7 @@ const yo: Partial<Record<UiKey, string>> = {
   homes: 'ilé', home: 'ilé', sample: 'àpẹẹrẹ',
   filters: 'Àṣàyàn', per_year_btn: 'Lọ́dún', per_month_btn: 'Lóṣù',
   verified_only: 'Àwọn onílé tí a ti fìdí wọn múlẹ̀ nìkan',
-  samples_notice: 'Kò tíì sí ilé kankan, nítorí náà àpẹẹrẹ ni àwọn wọ̀nyí láti fi bí RentFlow ṣe ń ṣiṣẹ́ hàn. A kò lè yá wọn.',
+  samples_notice: 'Kò tíì sí ilé kankan, nítorí náà àpẹẹrẹ ni àwọn wọ̀nyí láti fi bí Handova ṣe ń ṣiṣẹ́ hàn. A kò lè yá wọn.',
   no_match: 'Kò sí ilé tó bá àṣàyàn yìí mu', clear_filters: 'Pa àṣàyàn rẹ́',
   verified_landlord_pill: 'Onílé tí a fìdí rẹ̀ múlẹ̀', not_verified_pill: 'A kò tíì fìdí onílé múlẹ̀', sample_pill: 'Àpẹẹrẹ',
   caution_escrow: 'owó ìdánilójú · wà ní escrow',
@@ -112,7 +112,7 @@ const yo: Partial<Record<UiKey, string>> = {
   your_leases: 'Àwọn ilé tí o yá', step_paid: 'O ti sanwó', step_keys: 'Kọ́kọ́rọ́', step_moved_in: 'O ti wọlé', step_moved_out: 'O ti kúrò', step_settled: 'Ó parí',
   moved_in_btn: 'Mo ti wọlé', moving_out_btn: 'Mo fẹ́ kúrò', claim_caution: 'Gba owó ìdánilójú mi',
   request_repair: 'Béèrè àtúnṣe', rate_landlord_btn: 'Fún onílé ní máàkì',
-  how_use: 'Báwo ni o ṣe fẹ́ lo RentFlow?',
+  how_use: 'Báwo ni o ṣe fẹ́ lo Handova?',
 };
 
 const ig: Partial<Record<UiKey, string>> = {
@@ -126,7 +126,7 @@ const ig: Partial<Record<UiKey, string>> = {
   inspect_rent: 'Lelee ma gbazite',
   your_properties: 'Ụlọ gị', list_a_property: 'Tinye ụlọ', withdraw: 'Wepụ ego', edit: 'Dezie', delete: 'Hichapụ',
   your_leases: 'Ụlọ ị gbaziri', moved_in_btn: 'Abanyela m', moving_out_btn: 'Ana m apụ', claim_caution: 'Nara ego nchekwa m',
-  request_repair: 'Rịọ ndozi', how_use: 'Kedu ka ị ga-esi jiri RentFlow?',
+  request_repair: 'Rịọ ndozi', how_use: 'Kedu ka ị ga-esi jiri Handova?',
 };
 
 const ha: Partial<Record<UiKey, string>> = {
@@ -140,7 +140,7 @@ const ha: Partial<Record<UiKey, string>> = {
   inspect_rent: 'Duba ka yi haya',
   your_properties: 'Gidajenka', list_a_property: 'Saka gida', withdraw: 'Cire kuɗi', edit: 'Gyara', delete: 'Share',
   your_leases: 'Gidajen da ka yi haya', moved_in_btn: 'Na shiga', moving_out_btn: 'Zan fita', claim_caution: 'Karɓi kuɗin tsarona',
-  request_repair: 'Nemi gyara', how_use: 'Ta yaya za ka yi amfani da RentFlow?',
+  request_repair: 'Nemi gyara', how_use: 'Ta yaya za ka yi amfani da Handova?',
 };
 
 const UI: Record<LangCode, Partial<Record<UiKey, string>>> = { en, yo, pcm, ig, ha };

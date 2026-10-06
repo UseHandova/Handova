@@ -25,7 +25,7 @@ export default function LanguageWelcome() {
         style={{ background: 'var(--accent)', boxShadow: 'none' }}>
         <Home className="w-8 h-8 text-white" />
       </div>
-      <h1 className="display text-3xl font-bold mb-1" style={{ color: 'var(--ink)', letterSpacing: '-0.04em' }}>RentFlow</h1>
+      <h1 className="display text-3xl font-bold mb-1" style={{ color: 'var(--ink)', letterSpacing: '-0.04em' }}>Handova</h1>
       <p className="text-sm mb-8 text-center" style={{ color: 'var(--muted)' }}>
         Choose your language · Yan èdè rẹ · Zaɓi harshe
       </p>
