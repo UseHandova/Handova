@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, ChevronLeft, ChevronRight, BadgeCheck, ShieldAlert, ShieldCheck, MapPin, Map,
-  Share2, Heart, Star, Home, Play, Info,
+  Share2, Heart, Star, Home, Play, Info, MessageCircle,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/naira';
 import { useLang } from '@/lib/LangContext';
@@ -22,6 +22,8 @@ interface Props {
   onRent: () => void;
   /** Overrides the main button text when the tenant already has a visit in progress. */
   rentLabel?: string;
+  /** Opens in-app chat with the landlord (absent for samples). */
+  onMessage?: () => void;
   onMap: () => void;
   onShare: () => void;
   onReviews: () => void;
@@ -31,7 +33,7 @@ interface Props {
 const BEDROOM_TYPES = new Set(['single_room', 'self_contain', 'mini_flat', 'two_bed', 'three_bed']);
 
 
-export default function ListingDetail({ listing, saved, onToggleSave, onClose, onRent, rentLabel, onMap, onShare, onReviews }: Props) {
+export default function ListingDetail({ listing, saved, onToggleSave, onClose, onRent, rentLabel, onMessage, onMap, onShare, onReviews }: Props) {
   const { t } = useLang();
   const u = useUi();
   const [index, setIndex] = useState(0);
@@ -224,6 +226,13 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
             <p className="text-xs" style={{ color: 'var(--muted)' }}>{u('total_escrow')}</p>
             <p className="font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{formatNaira(listing.rentUsdc + listing.depositUsdc)}</p>
           </div>
+          {onMessage && (
+            <button onClick={onMessage} aria-label="Chat with the landlord"
+              className="shrink-0 px-4 py-3.5 rounded-xl font-semibold text-sm flex items-center gap-1.5"
+              style={{ background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)' }}>
+              <MessageCircle className="w-4 h-4" /> Chat
+            </button>
+          )}
           <button onClick={onRent}
             className="flex-1 sm:flex-none sm:px-8 py-3.5 rounded-xl font-semibold text-white text-sm"
             style={{ background: 'var(--accent)' }}>

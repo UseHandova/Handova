@@ -18,6 +18,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { toast } from 'sonner';
 import InspectionFlow from '@/components/InspectionFlow';
 import { formatSlot, inspectionFor, useInspections } from '@/lib/inspections';
+import { openChat } from '@/lib/chat';
 import ShareListing from '@/components/ShareListing';
 import SavedSearches from '@/components/SavedSearches';
 import TenantReviews from '@/components/TenantReviews';
@@ -364,6 +365,7 @@ export default function BrowseListings({ account }: Props) {
             onClose={() => setDetail(null)}
             onRent={() => { setFlowListing(detail); setDetail(null); }}
             rentLabel={visitLabel(detail)}
+            onMessage={detail.sample ? undefined : () => openChat({ listingId: String(detail.id) })}
             onMap={() => setMapListing(detail)}
             onShare={() => setShareListing(detail)}
             onReviews={() => setReviewListing(detail)} />

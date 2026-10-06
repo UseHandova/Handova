@@ -13,7 +13,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, ShieldCheck, X, XCircle, AlertTriangle,
+  CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, MessagesSquare, ShieldCheck, X, XCircle, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatNaira, formatUsdc } from '@/lib/naira';
@@ -26,6 +26,7 @@ import { encodeFunctionData, type Hex } from 'viem';
 import type { SmartAccount } from 'viem/account-abstraction';
 import type { Listing } from '@/components/BrowseListings';
 import SlotPicker from '@/components/SlotPicker';
+import { openChat } from '@/lib/chat';
 import { ApiError } from '@/lib/api';
 import {
   OUTCOME_OPENS_MS, calendarLink, formatSlot, inspectionFor, prettyPhone, saveContact, savedContact, useInspections, waLink,
@@ -122,7 +123,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
     : current?.status === 'requested' ? 'waiting'
     : current?.status === 'rescheduled' ? 'suggested'
     : current?.status === 'approved' ? (now >= current.slotAt - OUTCOME_OPENS_MS ? 'outcome' : 'upcoming')
-    : !chatted && landlordPhone && !current ? 'chat'
+    : !chatted && !current ? 'chat'
     : 'book';
   const stepIdx = { chat: 0, book: 1, waiting: 1, suggested: 1, upcoming: 2, outcome: 2, pay: 3, paid: 4 }[screen];
 
@@ -138,11 +139,21 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
     } finally { setBusy(null); }
   }
 
-  function openChat() {
-    const text = `Hello, I saw your property at ${listing.address || listing.location} on Handova. Is it still available? I'd like to arrange an inspection.`;
-    window.open(waLink(landlordPhone, text), '_blank');
+  function markChatted() {
     try { localStorage.setItem(CHATTED_KEY(listing.id), '1'); } catch { /* storage unavailable */ }
     setChatted(true);
+  }
+
+  /** In-app chat opens over this sheet; when they come back, the booking step is waiting. */
+  function chatInApp() {
+    openChat({ listingId: String(listing.id) });
+    markChatted();
+  }
+
+  function openWhatsApp() {
+    const text = `Hello, I saw your property at ${listing.address || listing.location} on Handova. Is it still available? I'd like to arrange an inspection.`;
+    window.open(waLink(landlordPhone, text), '_blank');
+    markChatted();
   }
 
   async function submitBooking() {
@@ -230,9 +241,10 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                 {screen === 'chat' && (<>
                   <div>
                     <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Talk to the landlord first</h3>
-                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Ask your questions and agree that you'll come and see it. Then come back here to book the visit — it keeps you both on the same page.</p>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Ask your questions and agree that you'll come and see it. Then come back here to book the visit, so you're both on the same page.</p>
                   </div>
-                  <button onClick={openChat} className={btn} style={primary}><MessageCircle className="w-4 h-4" /> Chat on WhatsApp</button>
+                  <button onClick={() => chatInApp()} className={btn} style={primary}><MessagesSquare className="w-4 h-4" /> Message the landlord</button>
+                  {landlordPhone && <button onClick={openWhatsApp} className={btn} style={secondary}><MessageCircle className="w-4 h-4" /> Chat on WhatsApp instead</button>}
                   <button onClick={() => setChatted(true)} className={btn} style={secondary}>We've already agreed — book a visit</button>
                   <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>Never pay anyone before you've inspected the home. Handova never asks for an inspection fee.</p>
                 </>)}
@@ -269,7 +281,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                     <Spin on={busy === 'book'} /> {slot ? `Request ${formatSlot(slot)}` : 'Pick a time above'}
                   </button>
                   {rebooking && <button onClick={() => setRebooking(false)} className="w-full text-sm py-2" style={{ color: 'var(--muted)' }}>Keep the current time</button>}
-                  {!rebooking && landlordPhone && !current && <button onClick={() => setChatted(false)} className="w-full text-xs py-1" style={{ color: 'var(--muted)' }}>← Chat with the landlord first</button>}
+                  {!rebooking && !current && <button onClick={() => setChatted(false)} className="w-full text-xs py-1" style={{ color: 'var(--muted)' }}>← Chat with the landlord first</button>}
                 </>)}
 
                 {/* 2 — Waiting for the landlord */}
@@ -278,7 +290,8 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                     <p>{current.notified === false ? 'They can see your request in Handova.' : 'We\'ve let them know.'} Most landlords reply within a day — we'll update this page when they do.</p>
                   </Banner>
                   <WhenWhere i={current} where={listing.address || listing.location} />
-                  <ChatLandlord phone={landlordPhone} text={`Hello, I've requested an inspection on Handova for ${formatSlot(current.slotAt)} at ${listing.address || listing.location}. Please approve it when you can.`} label="Remind the landlord on WhatsApp" />
+                  <button onClick={() => chatInApp()} className={btn} style={secondary}><MessagesSquare className="w-4 h-4" /> Message the landlord</button>
+                  <ChatLandlord phone={landlordPhone} text={`Hello, I've requested an inspection on Handova for ${formatSlot(current.slotAt)} at ${listing.address || listing.location}. Please approve it when you can.`} label="Remind them on WhatsApp" />
                   <div className="grid grid-cols-2 gap-2">
                     <button onClick={() => { setSlot(null); setRebooking(true); }} className={btn} style={secondary}>Change time</button>
                     <button onClick={() => { void run('cancel', () => ins.act(current.id, 'cancel'), () => 'Visit cancelled.'); }} disabled={busy === 'cancel'} className={btn} style={{ ...secondary, color: 'var(--danger)' }}><Spin on={busy === 'cancel'} /> Cancel</button>
@@ -303,9 +316,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                     <a href={calendarLink(`House inspection — ${listing.location}`, current.slotAt, `${listing.address || listing.location}\nBooked on Handova.`)} target="_blank" rel="noreferrer" className={btn} style={secondary}>
                       <CalendarPlus className="w-4 h-4" /> Add to calendar
                     </a>
-                    {landlordPhone
-                      ? <a href={waLink(landlordPhone, `Hello, this is ${current.tenantName}. Looking forward to the inspection ${formatSlot(current.slotAt)}.`)} target="_blank" rel="noreferrer" className={btn} style={secondary}><MessageCircle className="w-4 h-4" /> Message</a>
-                      : <button onClick={() => { setSlot(null); setRebooking(true); }} className={btn} style={secondary}>Change time</button>}
+                    <button onClick={() => chatInApp()} className={btn} style={secondary}><MessagesSquare className="w-4 h-4" /> Message</button>
                   </div>
                   <div className="rounded-2xl p-4" style={card}>
                     <p className="text-xs font-semibold mb-2" style={{ color: 'var(--ink)' }}>What to check when you visit</p>
@@ -314,7 +325,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                     </ul>
                   </div>
                   <div className="flex justify-center gap-4 text-sm">
-                    {landlordPhone && <button onClick={() => { setSlot(null); setRebooking(true); }} style={{ color: 'var(--muted)' }}>Change time</button>}
+                    <button onClick={() => { setSlot(null); setRebooking(true); }} style={{ color: 'var(--muted)' }}>Change time</button>
                     <button onClick={() => { if (window.confirm('Cancel this visit? The landlord will be told.')) void run('cancel', () => ins.act(current.id, 'cancel'), () => 'Visit cancelled.'); }} style={{ color: 'var(--danger)' }}>Cancel visit</button>
                   </div>
                 </>)}
@@ -324,7 +335,8 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                   <Banner tone="good" icon={Clock} title="Thanks — waiting for the landlord to confirm too">
                     <p>Once they confirm the visit, you can pay. If they don't respond within 24 hours of the visit, you'll be able to continue anyway — your money stays protected in escrow until you move in.</p>
                   </Banner>
-                  <ChatLandlord phone={landlordPhone} text={`Hello, thanks for showing me the property. Please confirm the inspection on Handova so I can proceed.`} label="Ask the landlord to confirm" />
+                  <button onClick={() => chatInApp()} className={btn} style={secondary}><MessagesSquare className="w-4 h-4" /> Ask the landlord to confirm</button>
+                  <ChatLandlord phone={landlordPhone} label="Ask on WhatsApp" text={`Hello, thanks for showing me the property. Please confirm the inspection on Handova so I can proceed.`} />
                 </>) : (<>
                   <div>
                     <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Did the inspection happen?</h3>
@@ -392,9 +404,6 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
           )}
           {ins.isError && !listing.sample && !own && (
             <p className="text-xs text-center" style={{ color: 'var(--danger)' }}>{errorMessage(ins.error)}</p>
-          )}
-          {current && !paid && landlordPhone === '' && screen !== 'pay' && (
-            <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>This landlord hasn't shared a WhatsApp number — they'll respond in Handova.</p>
           )}
           {current && ['requested', 'rescheduled', 'approved'].includes(current.status) && current.tenantPhone && (
             <p className="text-[11px] text-center" style={{ color: 'var(--subtle)' }}>The landlord can reach you on {prettyPhone(current.tenantPhone)}.</p>

@@ -14,6 +14,7 @@ export interface Inspection {
   id: number;
   listingId: string;
   role: 'tenant' | 'landlord';
+  tenant: string;
   place: string;
   status: InspectionStatus;
   slotAt: number;

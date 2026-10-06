@@ -61,6 +61,7 @@ Funds are pull-based: everyone calls `withdraw()` to collect what they're owed.
 - **Lease certificate NFT**, minted on move-in.
 - **Verified landlords.** ID document + liveness + face match through [Didit](https://didit.me) (free tier), or an NIMC NIN lookup + selfie match through [Dojah](https://dojah.io). A pass is recorded onchain (`verifiedAt`) so every tenant sees the badge. ID numbers and photos are never stored — only a salted hash, so one identity can verify only one account.
 - **Photo & video listings.** Landlords upload photos and a video tour; tenants see a photo-first grid, hover to preview the video, and open a full gallery. Files are served by the API server (`/api/media`, local disk via `MEDIA_DIR`) — swap to S3/R2/IPFS for production.
+- **In-app chat.** Tenants message a home's landlord from the listing or the booking flow. Landlords reply from the header inbox or from an inspection request. Unread badges, "Seen" receipts, and a WhatsApp nudge for the first unread message when Twilio can deliver it. Messages with bank details or "pay to view" requests get a scam warning. New messages arrive by polling (`server/chat.ts`), so no extra service is needed.
 - Map search, saved searches, inspections, dispute evidence upload, maintenance tracker, lease PDF export, landlord verification.
 
 ## Tech stack

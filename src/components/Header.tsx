@@ -17,6 +17,8 @@ interface Props {
   role?: 'tenant' | 'landlord';
   onSwitchRole?: () => void;
   onOpenAdmin?: () => void;
+  /** Chat button + panel (needs the signed-in account, which the header doesn't have). */
+  chat?: React.ReactNode;
 }
 
 function shortAddr(addr: string) {
@@ -28,7 +30,7 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   tenant:   { bg: 'rgba(91,184,138,0.15)', text: 'var(--success)' },
 };
 
-export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, role, onSwitchRole, onOpenAdmin }: Props) {
+export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, role, onSwitchRole, onOpenAdmin, chat }: Props) {
   const isAdmin = useIsAdmin(address);
   function handleSignOut() {
     clearCredential();
@@ -81,6 +83,8 @@ export default function Header({ address, pendingUsdc, onSignOut, onWithdraw, ro
 
       {/* Right: actions */}
       <div className="flex items-center gap-1 sm:gap-1.5 relative">
+        {chat}
+
         {/* Notifications */}
         <NotificationCenter address={address} />
 
