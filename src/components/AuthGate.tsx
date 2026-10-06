@@ -19,12 +19,45 @@ const springs = {
   gentle: { type: 'spring', stiffness: 280, damping: 26 } as const,
 };
 
+type AuthError = { msg: string; action?: 'login' | 'register' };
+
+const errText = (e: unknown) => (e instanceof Error ? `${e.name} ${e.message}` : String(e));
+
+/** Turn Circle / WebAuthn / viem errors into something a first-time user can act on. */
+function friendlyAuthError(e: unknown, mode: 'register' | 'login'): AuthError {
+  const raw = errText(e);
+  if (/NotAllowedError|not allowed|timed out|cancel/i.test(raw)) {
+    return mode === 'login'
+      ? { msg: 'No passkey was used. If you have not created a RentFlow account on this device yet, create one first.', action: 'register' }
+      : { msg: 'Face ID / fingerprint was cancelled or timed out. Tap the button to try again.' };
+  }
+  if (/InvalidStateError|already registered/i.test(raw)) {
+    return { msg: 'This device already has a RentFlow account. Sign in instead.', action: 'login' };
+  }
+  if (/not ?found|no credential|unknown credential|does not exist/i.test(raw)) {
+    return { msg: 'We could not find a RentFlow account for that passkey. Passkeys made on another website or device do not carry over — create a new account here.', action: 'register' };
+  }
+  if (/Invalid credentials|401|Unauthorized|clientKey/i.test(raw)) {
+    return { msg: 'RentFlow cannot reach its wallet service right now. Please try again in a few minutes.' };
+  }
+  if (/SecurityError/i.test(raw)) {
+    return { msg: 'Passkeys are not available on this web address. Open RentFlow from its official link and try again.' };
+  }
+  if (/Failed to fetch|NetworkError|network/i.test(raw)) {
+    return { msg: 'No internet connection. Check your data or Wi-Fi and try again.' };
+  }
+  return { msg: mode === 'login' ? 'Could not sign in. Please try again.' : 'Could not create your account. Please try again.' };
+}
+
+/** Short random tag so two people with the same name never collide in Circle's username registry. */
+const nameTag = () => Math.random().toString(36).slice(2, 8);
+
 export default function AuthGate({ onAuth }: Props) {
   const { t } = useLang();
   const [mode, setMode] = useState<'choose' | 'register' | 'login'>('choose');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<AuthError | null>(null);
   const [restoring, setRestoring] = useState(true);
 
   useEffect(() => {
@@ -35,50 +68,47 @@ export default function AuthGate({ onAuth }: Props) {
   }, [onAuth]);
 
   const clientKeyMissing = !import.meta.env.VITE_CLIENT_KEY;
-  const sanitized = username.replace(/[^a-zA-Z0-9]/g, '').slice(0, 50);
-  const usernameValid = sanitized.length >= 5;
+  // Strip accents (Ọlá → Ola) and anything else Circle usernames don't accept.
+  const sanitized = username.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
+  const usernameValid = sanitized.length >= 2;
 
   async function handleRegister() {
-    if (clientKeyMissing) { setError('Circle Client Key not set. See setup banner above.'); return; }
-    if (!usernameValid) { setError('Name must be at least 5 letters.'); return; }
-    setLoading(true); setError('');
+    if (clientKeyMissing) { setError({ msg: 'Circle Client Key not set. See setup banner above.' }); return; }
+    if (!usernameValid) { setError({ msg: 'Please enter your name (at least 2 letters).' }); return; }
+    setLoading(true); setError(null);
     try {
-      const { account } = await registerPasskey(sanitized);
-      onAuth(account, account.address);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const { account } = await registerPasskey(`${sanitized}${nameTag()}`);
+          onAuth(account, account.address);
+          return;
+        } catch (e) {
+          // Retry with a fresh tag only for a username clash; anything else is a real failure.
+          if (!/duplicat/i.test(errText(e)) || attempt >= 2) throw e;
+        }
+      }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
       console.error('[RentFlow] registerPasskey error:', e);
-      if (msg.includes('InvalidStateError') || msg.includes('already registered'))
-        setError('Account exists on this device. Use Sign In instead.');
-      else if (msg.includes('NotAllowedError'))
-        setError('Passkey cancelled — tap again to retry.');
-      else if (msg.includes('401') || msg.includes('Unauthorized') || msg.includes('clientKey'))
-        setError('Client Key invalid or Allowed Domain not set. Check Console setup.');
-      else if (msg.includes('SecurityError'))
-        setError('Passkey domain mismatch — verify Console Passkey Domain matches this page\'s hostname.');
-      else
-        setError(`Could not create account: ${msg.slice(0, 120)}`);
+      setError(friendlyAuthError(e, 'register'));
     } finally { setLoading(false); }
   }
 
   async function handleLogin() {
-    if (clientKeyMissing) { setError('Circle Client Key not set. See setup banner above.'); return; }
-    setLoading(true); setError('');
+    if (clientKeyMissing) { setError({ msg: 'Circle Client Key not set. See setup banner above.' }); return; }
+    setLoading(true); setError(null);
     try {
       const { account } = await loginPasskey();
       onAuth(account, account.address);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
       console.error('[RentFlow] loginPasskey error:', e);
-      if (msg.includes('NotAllowedError'))
-        setError('Passkey cancelled — tap again to retry.');
-      else if (msg.includes('401') || msg.includes('Unauthorized'))
-        setError('Client Key invalid or Allowed Domain not set. Check Console setup.');
-      else if (msg.includes('SecurityError'))
-        setError('Passkey domain mismatch — verify Console Passkey Domain.');
-      else
-        setError(`Could not sign in: ${msg.slice(0, 120)}`);
+      setError(friendlyAuthError(e, 'login'));
     } finally { setLoading(false); }
+  }
+
+  function runErrorAction(action: 'login' | 'register') {
+    setError(null);
+    if (action === 'login') { setMode('choose'); void handleLogin(); }
+    else setMode('register');
   }
 
   if (restoring) {
@@ -92,9 +122,9 @@ export default function AuthGate({ onAuth }: Props) {
   }
 
   const TRUST_BADGES = [
-    { icon: Shield,       label: 'USDC Escrow',   sub: t('escrow_note').slice(0, 40) + '…' },
-    { icon: Fingerprint,  label: t('sign_in'),     sub: t('passkey_sub').slice(0, 40) + '…' },
-    { icon: CheckCircle2, label: t('no_agent'),    sub: t('zero_fees').slice(0, 40) + '…' },
+    { icon: Shield,       label: 'USDC Escrow',   sub: t('escrow_note') },
+    { icon: Fingerprint,  label: t('sign_in'),     sub: t('passkey_sub') },
+    { icon: CheckCircle2, label: t('no_agent'),    sub: t('zero_fees') },
   ];
 
   return (
@@ -177,9 +207,9 @@ export default function AuthGate({ onAuth }: Props) {
                 style={{ background: 'var(--accent-soft)' }}>
                 <Icon className="w-4 h-4" style={{ color: 'var(--accent)' }} />
               </div>
-              <div>
-                <p className="text-xs font-semibold leading-none mb-0.5" style={{ color: 'var(--ink)' }}>{label}</p>
-                <p className="text-[10px] leading-none" style={{ color: 'var(--muted)' }}>{sub}</p>
+              <div className="max-w-[190px]">
+                <p className="text-xs font-semibold leading-tight mb-0.5" style={{ color: 'var(--ink)' }}>{label}</p>
+                <p className="text-[10px] leading-snug" style={{ color: 'var(--muted)' }}>{sub}</p>
               </div>
             </div>
           ))}
@@ -216,7 +246,7 @@ export default function AuthGate({ onAuth }: Props) {
                       : <Fingerprint className="w-4 h-4" style={{ color: 'var(--muted)' }} />}
                     {t('sign_in')}
                   </motion.button>
-                  {error && <ErrorMessage msg={error} />}
+                  {error && <ErrorMessage error={error} onAction={runErrorAction} />}
                 </motion.div>
               )}
 
@@ -224,7 +254,7 @@ export default function AuthGate({ onAuth }: Props) {
               {mode === 'register' && (
                 <motion.div key="register" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -12 }} transition={springs.snappy}>
-                  <button onClick={() => { setMode('choose'); setError(''); }}
+                  <button onClick={() => { setMode('choose'); setError(null); }}
                     className="flex items-center gap-1 text-sm mb-4 -ml-0.5 transition-opacity hover:opacity-60"
                     style={{ color: 'var(--muted)' }}>
                     <ArrowLeft className="w-4 h-4" /> {t('back')}
@@ -239,25 +269,16 @@ export default function AuthGate({ onAuth }: Props) {
                   </label>
                   <input
                     type="text" value={username}
-                    onChange={e => { setUsername(e.target.value); setError(''); }}
+                    onChange={e => { setUsername(e.target.value); setError(null); }}
                     placeholder={t('name_placeholder')}
                     className="w-full px-4 py-3.5 rounded-xl border text-base mb-2 outline-none"
                     style={{ background: 'var(--surface-muted)', borderColor: 'var(--border)', color: 'var(--ink)' }}
                     onKeyDown={e => { if (e.key === 'Enter') void handleRegister(); }}
                     autoFocus
                   />
-                  {username.length > 0 && (
-                    <p className="text-xs mb-4" style={{ color: 'var(--muted)' }}>
-                      {t('account_id')}:{' '}
-                      <span className="mono" style={{ color: sanitized.length >= 5 ? 'var(--success)' : 'var(--danger)' }}>
-                        {sanitized || '—'}
-                      </span>
-                      {sanitized.length < 5 && sanitized.length > 0 && (
-                        <span> · {5 - sanitized.length} {t('need_more_letters')}</span>
-                      )}
-                    </p>
-                  )}
-                  {!username.length && <div className="mb-4" />}
+                  {username.length > 0 && !usernameValid
+                    ? <p className="text-xs mb-4" style={{ color: 'var(--danger)' }}>Please enter at least 2 letters.</p>
+                    : <div className="mb-4" />}
 
                   <motion.button whileTap={{ scale: 0.97 }} onClick={() => { void handleRegister(); }}
                     disabled={loading || !usernameValid}
@@ -270,7 +291,7 @@ export default function AuthGate({ onAuth }: Props) {
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> {t('setting_up')}</>
                       : <><Fingerprint className="w-5 h-5" /> {t('create_with_biometric')}</>}
                   </motion.button>
-                  {error && <ErrorMessage msg={error} />}
+                  {error && <ErrorMessage error={error} onAction={runErrorAction} />}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -286,13 +307,23 @@ export default function AuthGate({ onAuth }: Props) {
   );
 }
 
-function ErrorMessage({ msg }: { msg: string }) {
+function ErrorMessage({ error, onAction }: { error: AuthError; onAction: (a: 'login' | 'register') => void }) {
   return (
     <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-      className="flex items-start gap-1.5 mt-3 p-3 rounded-xl text-xs"
-      style={{ background: 'rgba(186,43,76,0.08)', border: '1px solid rgba(186,43,76,0.18)', color: 'var(--danger)' }}>
-      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-      <span>{msg}</span>
+      className="mt-3 p-3 rounded-xl text-xs space-y-2"
+      style={{ background: 'rgba(186,43,76,0.08)', border: '1px solid rgba(186,43,76,0.18)', color: 'var(--danger)' }}
+      role="alert">
+      <div className="flex items-start gap-1.5">
+        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+        <span className="leading-relaxed">{error.msg}</span>
+      </div>
+      {error.action && (
+        <button onClick={() => onAction(error.action!)}
+          className="w-full py-2 rounded-lg font-semibold text-xs"
+          style={{ background: 'var(--surface-strong)', color: 'var(--ink)', border: '1px solid var(--border)' }}>
+          {error.action === 'login' ? 'Sign in instead' : 'Create a new account'}
+        </button>
+      )}
     </motion.div>
   );
 }
