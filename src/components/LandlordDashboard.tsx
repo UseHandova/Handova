@@ -7,7 +7,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AlertCircle, BadgeCheck, Building2, Check, CheckCircle2, ChevronRight, Home, ImagePlus, Info, Loader2, MapPin, MessageCircle, Play, PlusCircle, ShieldAlert, Star, TrendingUp, Upload, Wrench, X,
+  AlertCircle, BadgeCheck, Building2, Check, CheckCircle2, ChevronRight, Home, ImagePlus, Info, Loader2, MapPin, MessageCircle, Pencil, Play, PlusCircle, ShieldAlert, Star, Trash2, TrendingUp, Upload, Wrench, X,
 } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira, nairaToUsdc, USDC_TO_NGN } from '@/lib/naira';
@@ -38,7 +38,8 @@ import TenantReviews from '@/components/TenantReviews';
 
 interface Props { account: SmartAccount; }
 
-type MediaItem = { id: string; type: 'image' | 'video'; url: string; name: string; file: File };
+/** A photo/video in the form: either a new local file to upload, or an already-uploaded URL (editing, WhatsApp draft). */
+type MediaItem = { id: string; type: 'image' | 'video'; url: string; name: string; file?: File };
 type View = 'home' | 'new-listing';
 type DashTab = 'listings' | 'whatsapp' | 'stats';
 
@@ -105,7 +106,10 @@ const springs = {
 export default function LandlordDashboard({ account }: Props) {
   // Screen comes from the URL so reloads and the back button work.
   const [path, navigate] = usePath();
-  const view: View = path === '/landlord/new' ? 'new-listing' : 'home';
+  const editMatch = path.match(/^\/landlord\/edit\/(\d+)$/);
+  const editingId = editMatch ? BigInt(editMatch[1]) : null;
+  const view: View = path === '/landlord/new' || editingId !== null ? 'new-listing' : 'home';
+  const draftCode = view === 'new-listing' && !editingId ? (new URLSearchParams(window.location.search).get('draft') ?? '') : '';
   const dashTab: DashTab = path === '/landlord/whatsapp' ? 'whatsapp' : path === '/landlord/insights' ? 'stats' : 'listings';
   const setView = (v: View) => navigate(v === 'new-listing' ? '/landlord/new' : '/landlord');
   const setDashTab = (t: DashTab) => navigate(t === 'whatsapp' ? '/landlord/whatsapp' : t === 'stats' ? '/landlord/insights' : '/landlord');
@@ -131,6 +135,52 @@ export default function LandlordDashboard({ account }: Props) {
   const [done, setDone] = useState(false);
   const chain = useChainState();
   const refreshChain = useRefreshChain();
+
+  // Pre-fill the form when editing a listing or reviewing a WhatsApp draft (once per target).
+  const prefillKey = editingId !== null ? `edit:${editingId}` : draftCode ? `draft:${draftCode}` : '';
+  const [prefilled, setPrefilled] = useState('');
+  const editTarget = editingId !== null ? chain.data?.listings.find(l => l.id === editingId) : undefined;
+  const draftQuery = useQuery({
+    queryKey: ['wa-draft', draftCode],
+    enabled: !!draftCode,
+    retry: false,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const res = await fetch(`/api/bot/draft/${draftCode}`);
+      if (!res.ok) throw new Error('This WhatsApp code was not found or was already used.');
+      return res.json() as Promise<{ location: string; rooms: number; rentNgn: number; depositNgn: number; description: string; amenities: string[]; media?: { type: 'image' | 'video'; url: string }[] }>;
+    },
+  });
+  useEffect(() => {
+    if (!prefillKey || prefilled === prefillKey) return;
+    const fromUrls = (items: { type: 'image' | 'video'; url: string }[] = []): MediaItem[] =>
+      items.map((m, i) => ({ id: `existing-${i}`, type: m.type, url: m.url, name: m.url.split('/').pop() ?? 'media' }));
+    if (editTarget) {
+      const m = editTarget.meta;
+      const roomsStr = String(m.rooms ?? 2);
+      // Syncing form state from external (onchain) data once per edit target.
+      // oxlint-disable-next-line react/set-state-in-effect
+      setForm({
+        address: m.address ?? '', location: m.location ?? '', rooms: ['1', '2', '3', '4'].includes(roomsStr) ? roomsStr : '5+',
+        propertyType: (m.propertyType as PropertyType) ?? 'two_bed', furnishing: m.furnishing ?? 'unfurnished',
+        description: m.description ?? '', rentNgn: String(Math.round(editTarget.rentUsdc * USDC_TO_NGN)),
+        depositNgn: String(Math.round(editTarget.depositUsdc * USDC_TO_NGN)), amenities: m.amenities ?? [],
+        phone: m.phone ? `0${m.phone.slice(3)}` : '',
+      });
+      setMedia(fromUrls(m.media));
+      setPin(m.lat && m.lng ? { lat: m.lat, lng: m.lng } : null);
+      setGeoStatus(m.lat && m.lng ? 'valid' : 'idle');
+      setPrefilled(prefillKey);
+    } else if (draftQuery.data) {
+      const d = draftQuery.data;
+      setForm(f => ({
+        ...f, location: d.location ?? '', rooms: d.rooms >= 5 ? '5+' : String(d.rooms || 2), description: d.description ?? '',
+        rentNgn: d.rentNgn ? String(d.rentNgn) : '', depositNgn: d.depositNgn ? String(d.depositNgn) : '', amenities: d.amenities ?? [],
+      }));
+      setMedia(fromUrls(d.media));
+      setPrefilled(prefillKey);
+    }
+  }, [prefillKey, prefilled, editTarget, draftQuery.data]);
   // Returning from Didit's hosted page (?verificationSessionId=…): reopen verification to collect the result.
   const [diditReturn] = useState(diditSessionFromUrl);
   useEffect(() => { clearReturnParams(); }, []);
@@ -157,12 +207,13 @@ export default function LandlordDashboard({ account }: Props) {
   const withdrawable = usePendingWithdrawal(account.address).data ?? 0;
   const now = useNow();
   const [withdrawing, setWithdrawing] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   // This landlord's listings, read from the escrow contract.
   const listings = useMemo<MockListing[]>(() => {
     const escrows = new Map((chain.data?.escrows ?? []).map(e => [e.id, e]));
     return (chain.data?.listings ?? [])
-      .filter(l => sameAddress(l.landlord, account.address))
+      .filter(l => sameAddress(l.landlord, account.address) && (l.active || l.escrowId !== 0n))
       .reverse()
       .map(l => ({
         id: String(l.id),
@@ -251,9 +302,10 @@ export default function LandlordDashboard({ account }: Props) {
       const rentRaw = parseAmount(5042002, rentUsdc.toFixed(6)).raw;
       const depositRaw = parseAmount(5042002, depositUsdc.toFixed(6)).raw;
 
-      // Upload photos/videos first; the listing stores only their URLs.
+      // Upload new photos/videos first (already-uploaded ones keep their URL); the listing stores only URLs.
       const uploaded: { type: 'image' | 'video'; url: string }[] = [];
       for (const m of media) {
+        if (!m.file) { uploaded.push({ type: m.type, url: m.url }); continue; }
         const body = new FormData();
         body.append('file', m.file);
         const res = await fetch('/api/media', { method: 'POST', body });
@@ -281,21 +333,23 @@ export default function LandlordDashboard({ account }: Props) {
         args: [rentRaw, depositRaw, metadata],
       });
 
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }],
-        paymaster: true,
-      });
-
+      // Editing: the contract has no update, so publish the corrected listing and retire the old one
+      // in the same transaction (only possible while no tenant has paid).
+      const calls = [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }];
+      if (editingId !== null) {
+        calls.push({ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'deactivateListing', args: [editingId] }), value: 0n });
+      }
+      const hash = await bundlerClient.sendUserOperation({ account, calls, paymaster: true });
       await bundlerClient.waitForUserOperationReceipt({ hash });
+      if (draftCode) await fetch(`/api/bot/draft/${draftCode}/published`, { method: 'POST' }).catch(() => undefined);
 
       await refreshChain();
 
       setDone(true);
-      toast.success('Property listed onchain!');
+      toast.success(editingId !== null ? 'Changes saved.' : 'Property listed onchain!');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes('NotAllowedError')) toast.error(msg.startsWith('Could not upload') || msg.includes('under') ? msg : 'Could not list property.');
+      if (!msg.includes('NotAllowedError')) toast.error(msg.startsWith('Could not upload') || msg.includes('under') ? msg : editingId !== null ? 'Could not save changes. If a tenant has already paid, the listing can no longer be edited.' : 'Could not list property.');
     } finally {
       setLoading(false);
     }
@@ -307,6 +361,7 @@ export default function LandlordDashboard({ account }: Props) {
     setPin(null);
     setMedia([]);
     setDone(false);
+    setPrefilled('');
     setView('home');
   }
 
@@ -324,7 +379,7 @@ export default function LandlordDashboard({ account }: Props) {
           <Check className="w-10 h-10 text-white" />
         </motion.div>
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-          <h2 className="display text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Listed Onchain!</h2>
+          <h2 className="display text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>{editingId !== null ? 'Changes saved' : 'Listed onchain!'}</h2>
           <p className="text-sm mb-7 max-w-xs" style={{ color: 'var(--muted)' }}>
             Your property is live. Rent goes directly into escrow — no agent, no cut.
           </p>
@@ -357,9 +412,20 @@ export default function LandlordDashboard({ account }: Props) {
 
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <h2 className="display text-2xl font-bold mb-1" style={{ color: 'var(--ink)', letterSpacing: '-0.03em' }}>
-            New Property
+            {editingId !== null ? 'Edit property' : draftCode ? 'Review your WhatsApp listing' : 'New property'}
           </h2>
-          <p className="text-sm mb-6" style={{ color: 'var(--muted)' }}>Add photos, set your price — tenants pay you directly.</p>
+          <p className="text-sm mb-6" style={{ color: 'var(--muted)' }}>
+            {draftCode
+              ? 'We filled this in from your WhatsApp message. Add photos, confirm the address on the map, fix anything we got wrong, then publish.'
+              : editingId !== null
+                ? 'Update the details below. Saving republishes the listing — only possible while no tenant has paid.'
+                : 'Add photos, set your price — tenants pay you directly.'}
+          </p>
+          {draftCode && draftQuery.isError && (
+            <p className="text-sm mb-6 px-4 py-3 rounded-xl" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>
+              {(draftQuery.error as Error).message} You can still fill in the form yourself.
+            </p>
+          )}
 
           <div className="space-y-5">
 
@@ -720,7 +786,7 @@ export default function LandlordDashboard({ account }: Props) {
             >
               {loading
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Listing onchain…</>
-                : <><Home className="w-4 h-4" /> List Property</>
+                : <><Home className="w-4 h-4" /> {editingId !== null ? 'Save changes' : 'Publish listing'}</>
               }
             </motion.button>
           </div>
@@ -733,6 +799,26 @@ export default function LandlordDashboard({ account }: Props) {
   const rentedCount = listings.filter(l => l.status === 'rented').length;
   const attention = listings.filter(l => l.escrow && needsLandlord(l.escrow, now));
   const annualRent = listings.filter(l => l.status === 'rented').reduce((s, l) => s + l.rentNgn, 0);
+
+  async function deleteListing(id: bigint) {
+    if (!window.confirm('Remove this listing? Tenants will no longer see it. You can list the property again any time.')) return;
+    setDeleting(String(id));
+    try {
+      const hash = await bundlerClient.sendUserOperation({
+        account,
+        calls: [{ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'deactivateListing', args: [id] }), value: 0n }],
+        paymaster: true,
+      });
+      await bundlerClient.waitForUserOperationReceipt({ hash });
+      await refreshChain();
+      toast.success('Listing removed.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes('NotAllowedError')) toast.error('Could not remove the listing. If a tenant has already paid, it can\'t be removed.');
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   async function withdraw() {
     setWithdrawing(true);
@@ -902,6 +988,20 @@ export default function LandlordDashboard({ account }: Props) {
                           {l.rooms} bed · <span style={{ color: 'var(--ink)' }} className="font-semibold">{formatNaira(l.rentNgn / USDC_TO_NGN)}</span>/yr
                         </p>
                       </div>
+                      {!l.escrow && (
+                        <div className="mt-auto px-4 pb-4 flex gap-2">
+                          <button onClick={() => navigate(`/landlord/edit/${l.id}`)}
+                            className="flex-1 h-10 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5"
+                            style={{ background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)' }}>
+                            <Pencil className="w-4 h-4" /> Edit
+                          </button>
+                          <button onClick={() => { void deleteListing(BigInt(l.id)); }} disabled={deleting === l.id}
+                            className="h-10 px-4 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-60"
+                            style={{ background: 'transparent', color: 'var(--danger)', border: '1px solid var(--border)' }}>
+                            {deleting === l.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete
+                          </button>
+                        </div>
+                      )}
                       {l.escrow && (
                         <div className="mt-auto">
                           <LandlordEscrowPanel escrow={l.escrow} account={account} compact={needsLandlord(l.escrow, now)} />

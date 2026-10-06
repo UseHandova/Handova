@@ -29,7 +29,8 @@ import cors from 'cors';
 import OpenAI from 'openai';
 import twilio from 'twilio';
 import { mountVerification } from './verification';
-import { mountMedia } from './media';
+import { mountMedia, saveRemoteMedia } from './media';
+import { mountModeration } from './moderation';
 
 const app = express();
 const PORT = 3001;
@@ -74,7 +75,8 @@ interface PendingListing {
   depositNgn: number;
   description: string;
   amenities: string[];
-  mediaUrls: string[];   // Twilio media URLs
+  mediaUrls: string[];   // Twilio media URLs (need auth — never shown to users)
+  media: { type: 'image' | 'video'; url: string }[];  // copies in our media store, shown on the listing
   rawMessage: string;
   parsedAt: number;
   status: 'pending' | 'published' | 'rejected';
@@ -112,6 +114,7 @@ function publicDraft(l: PendingListing) {
     depositNgn: l.depositNgn,
     description: l.description,
     amenities: l.amenities,
+    media: l.media,
     phoneHint: l.from.replace(/^whatsapp:/, '').replace(/\d(?=\d{3})/g, '•'),
     status: l.status,
   };
@@ -137,7 +140,7 @@ Common Nigerian rent abbreviations: 500k = 500,000, 1.2m = 1,200,000, 800k = 800
 If message is in Nigerian Pidgin/Yoruba/Igbo/Hausa, translate and extract accordingly.`;
 
 // ── Parse listing from text ───────────────────────────────────────────────────
-async function parseListingFromText(text: string): Promise<Omit<PendingListing, 'id' | 'code' | 'from' | 'mediaUrls' | 'rawMessage' | 'parsedAt' | 'status'>> {
+async function parseListingFromText(text: string): Promise<Omit<PendingListing, 'id' | 'code' | 'from' | 'mediaUrls' | 'media' | 'rawMessage' | 'parsedAt' | 'status'>> {
   const completion = await ai().chat.completions.create({
     model: CHAT_MODEL,
     messages: [
@@ -256,12 +259,23 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     }
 
     // Store in pending queue
+    // Copy photos/videos the landlord sent into our media store (Twilio's URLs require our credentials).
+    const media: PendingListing['media'] = [];
+    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      for (let i = 0; i < mediaUrls.length && media.length < 10; i++) {
+        if (!/^(image|video)\//.test(mediaTypes[i] ?? '')) continue;
+        const saved = await saveRemoteMedia(mediaUrls[i], { user: process.env.TWILIO_ACCOUNT_SID, pass: process.env.TWILIO_AUTH_TOKEN });
+        if (saved) media.push(saved);
+      }
+    }
+
     const listing: PendingListing = {
       id: Math.random().toString(36).slice(2),
       code: newClaimCode(),
       from,
       ...parsed,
       mediaUrls: mediaUrls.filter((_, i) => mediaTypes[i]?.startsWith('image/')),
+      media,
       rawMessage: msgBody,
       parsedAt: Date.now(),
       status: 'pending',
@@ -271,7 +285,7 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
     // Send confirmation back to landlord
     const rentFormatted = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(parsed.rentNgn);
     const replyMsg = parsed.rentNgn > 0
-      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n\n🔑 Your RentFlow code: *${listing.code}*\n${process.env.APP_URL ? `Tap to publish: ${process.env.APP_URL.replace(/\/$/, '')}/landlord/whatsapp?wa=${listing.code}` : 'Open RentFlow → Landlord → WhatsApp and enter this code to publish it.'}`
+      ? `✅ Got it! Here's what I captured:\n\n📍 ${parsed.location}\n🛏 ${parsed.rooms} bedroom(s)\n💰 ${rentFormatted}/year\n📝 ${parsed.description}\n${media.length ? `📷 ${media.length} photo/video${media.length > 1 ? 's' : ''} saved` : '📷 Tip: send photos of the house too — listings with photos get more tenants'}\n\n🔑 Your RentFlow code: *${listing.code}*\n${process.env.APP_URL ? `Tap to publish: ${process.env.APP_URL.replace(/\/$/, '')}/landlord/whatsapp?wa=${listing.code}` : 'Open RentFlow → Landlord → List by WhatsApp, enter this code, check the details and confirm the address on the map.'}`
       : `I received your message but couldn't find the rent amount. Please reply with: location, rooms, and rent. E.g. "2 bed Yaba 600k per year"`;
 
     res.set('Content-Type', 'text/xml').send(twimlReply(replyMsg));
@@ -367,6 +381,7 @@ app.post('/api/bot/reject', (req, res) => {
 
 mountVerification(app);
 mountMedia(app);
+mountModeration(app);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

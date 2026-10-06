@@ -84,6 +84,13 @@ export const ESCROW_ABI = [
     type: 'function',
   },
   {
+    inputs: [{ name: 'listingId', type: 'uint256' }],
+    name: 'deactivateListing',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
     inputs: [{ name: 'escrowId', type: 'uint256' }],
     name: 'markHandover',
     outputs: [],
