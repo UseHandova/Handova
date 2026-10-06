@@ -41,14 +41,19 @@ export const bundlerClient = createBundlerClient({
   transport: modularTransport,
 });
 
-/** Persist / restore credential from sessionStorage (replace with httpOnly cookie in prod). */
+/**
+ * Persist the passkey credential (public key + id only — no secrets) so users stay signed in
+ * across tabs and restarts. Storage can be unavailable (private mode), so every access is guarded.
+ */
+const CRED_KEY = 'rentflow_cred';
+
 export function saveCredential(cred: WebAuthnCredential) {
-  sessionStorage.setItem('rentflow_cred', JSON.stringify(cred));
+  try { localStorage.setItem(CRED_KEY, JSON.stringify(cred)); } catch { /* storage unavailable */ }
 }
 
 export function loadCredential(): WebAuthnCredential | null {
   try {
-    const raw = sessionStorage.getItem('rentflow_cred');
+    const raw = localStorage.getItem(CRED_KEY) ?? sessionStorage.getItem(CRED_KEY);
     return raw ? (JSON.parse(raw) as WebAuthnCredential) : null;
   } catch {
     return null;
@@ -56,7 +61,10 @@ export function loadCredential(): WebAuthnCredential | null {
 }
 
 export function clearCredential() {
-  sessionStorage.removeItem('rentflow_cred');
+  try {
+    localStorage.removeItem(CRED_KEY);
+    sessionStorage.removeItem(CRED_KEY);
+  } catch { /* storage unavailable */ }
 }
 
 /** Register a new passkey and create a Circle smart account. */
