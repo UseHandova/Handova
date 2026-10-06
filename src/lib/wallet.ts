@@ -65,6 +65,8 @@ export function clearCredential() {
     localStorage.removeItem(CRED_KEY);
     sessionStorage.removeItem(CRED_KEY);
   } catch { /* storage unavailable */ }
+  // Signing out also forgets a phone wallet kept on this device (its locked backup stays on the server).
+  void import('@/lib/phone-wallet').then(m => m.clearDeviceKey());
 }
 
 /** Register a new passkey and create a Circle smart account. */
@@ -101,10 +103,14 @@ export async function loginPasskey(): Promise<{
   return { credential, account };
 }
 
-/** Restore session from stored credential. */
+/** Restore session from the stored passkey credential, or a phone wallet kept on this device. */
 export async function restoreSession(): Promise<SmartAccount | null> {
   const credential = loadCredential();
-  if (!credential) return null;
+  if (!credential) {
+    const { loadDeviceKey, smartAccountFor } = await import('@/lib/phone-wallet');
+    const device = await loadDeviceKey();
+    return device ? smartAccountFor(device.privateKey).catch(() => null) : null;
+  }
   try {
     const account = await toCircleSmartAccount({
       client: publicClient,

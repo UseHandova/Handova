@@ -6,8 +6,9 @@
 import { useState, useEffect } from 'react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, Shield, Fingerprint, Loader2, AlertCircle, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Home, Shield, Fingerprint, Loader2, AlertCircle, ArrowLeft, CheckCircle2, Phone } from 'lucide-react';
 import { registerPasskey, loginPasskey, restoreSession } from '@/lib/wallet';
+import PhoneLogin from '@/components/PhoneLogin';
 import ThemeToggle from '@/components/ThemeToggle';
 import LangSelector from '@/components/LangSelector';
 import { useLang } from '@/lib/LangContext';
@@ -54,7 +55,7 @@ const nameTag = () => Math.random().toString(36).slice(2, 8);
 
 export default function AuthGate({ onAuth }: Props) {
   const { t } = useLang();
-  const [mode, setMode] = useState<'choose' | 'register' | 'login'>('choose');
+  const [mode, setMode] = useState<'choose' | 'register' | 'login' | 'phone'>('choose');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<AuthError | null>(null);
@@ -243,7 +244,26 @@ export default function AuthGate({ onAuth }: Props) {
                       : <Fingerprint className="w-4 h-4" style={{ color: 'var(--muted)' }} />}
                     {t('sign_in')}
                   </motion.button>
+                  <div className="flex items-center gap-3 my-4" aria-hidden>
+                    <span className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+                    <span className="text-xs" style={{ color: 'var(--subtle)' }}>or</span>
+                    <span className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+                  </div>
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setMode('phone'); setError(null); }}
+                    className="w-full py-3.5 rounded-2xl font-semibold text-sm border flex items-center justify-center gap-2"
+                    style={{ background: 'transparent', color: 'var(--ink)', borderColor: 'var(--border)' }}>
+                    <Phone className="w-4 h-4" style={{ color: 'var(--muted)' }} /> Continue with phone number
+                  </motion.button>
+                  <p className="text-[11px] text-center mt-2" style={{ color: 'var(--subtle)' }}>No Face ID or fingerprint? Use your number and a PIN.</p>
                   {error && <ErrorMessage error={error} onAction={runErrorAction} />}
+                </motion.div>
+              )}
+
+              {/* Phone number */}
+              {mode === 'phone' && (
+                <motion.div key="phone" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }} transition={springs.snappy}>
+                  <PhoneLogin onAuth={onAuth} onBack={() => setMode('choose')} />
                 </motion.div>
               )}
 
