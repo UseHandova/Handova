@@ -19,6 +19,7 @@ import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ConnectKitProvider } from 'connectkit'
 import { MotionConfig } from 'framer-motion'
+import ErrorBoundary from './components/ErrorBoundary'
 import { Toaster } from 'sonner'
 import { config } from './config'
 import App from './App'
@@ -37,7 +38,9 @@ createRoot(document.getElementById('root')!).render(
         <ConnectKitProvider>
           <LangProvider>
             <MotionConfig reducedMotion={lite ? 'always' : 'user'}>
-              <App />
+              <ErrorBoundary>
+                <App />
+              </ErrorBoundary>
             </MotionConfig>
           </LangProvider>
           <Toaster position="top-center" />

@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import WhatsAppInbox from '@/components/WhatsAppInbox';
 import LangSelector from '@/components/LangSelector';
 import { geocodeAddress, PinDropMap } from '@/components/PropertyMap';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { PROPERTY_TYPES, type PropertyType, type TranslationKey } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import LandlordVerification from '@/components/LandlordVerification';
@@ -480,11 +481,13 @@ export default function LandlordDashboard({ account }: Props) {
 
             {/* ── PinDrop modal ── */}
             {showPinDrop && (
-              <PinDropMap
-                initialAddress={form.address}
-                onConfirm={result => { setPin(result); setGeoStatus('valid'); setShowPinDrop(false); }}
-                onClose={() => setShowPinDrop(false)}
-              />
+              <ErrorBoundary inline onReset={() => setShowPinDrop(false)}>
+                <PinDropMap
+                  initialAddress={form.address}
+                  onConfirm={result => { setPin(result); setGeoStatus('valid'); setShowPinDrop(false); }}
+                  onClose={() => setShowPinDrop(false)}
+                />
+              </ErrorBoundary>
             )}
 
             {/* ── Location (neighbourhood display name) ── */}
