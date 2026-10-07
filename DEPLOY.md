@@ -83,3 +83,4 @@ When these are set, uploads go to the bucket and listings store the public URL. 
 - Make your app account the dispute **arbiter** (done on testnet: `0xcb03…1c35`).
 - Run the test suites before each release: `bun run contracts:test` and `bun run test:server`.
 - Back up the volume (`server/data`) — it is the only copy of off-chain data.
+- Set `OWNERSHIP_KEY` (`openssl rand -hex 32`) and keep it with your backups. Ownership documents are encrypted with it while pending and deleted once reviewed; only fingerprints and decisions are kept.

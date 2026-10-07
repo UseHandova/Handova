@@ -23,7 +23,8 @@ export const DOC_TYPES: { id: string; label: string; hint: string }[] = [
 export interface OwnershipRequest {
   id: number; landlord: string; address: string; addressKey: string; listingId: string;
   docType: string; docLabel: string; note: string; status: 'pending' | 'approved' | 'rejected'; reason: string;
-  createdAt: number; reviewedAt: number | null; files?: { index: number; name: string; mime: string }[];
+  createdAt: number; reviewedAt: number | null; consentAt: number | null; filesDeletedAt: number | null;
+  files?: { index: number; name: string; mime: string; sha256: string | null; available: boolean }[];
 }
 
 /** Public: approved (landlord, address) pairs → approval time. */
@@ -59,6 +60,7 @@ export async function submitOwnership(account: SmartAccount, fields: { listingId
   form.append('listingId', fields.listingId);
   form.append('docType', fields.docType);
   form.append('note', fields.note);
+  form.append('consent', 'yes'); // only called after the landlord ticks the consent box
   for (const f of files) form.append('files', f);
   const res = await fetch('/api/ownership', { method: 'POST', headers: { Authorization: `Bearer ${await getSession(account)}` }, body: form });
   const out = await res.json().catch(() => ({})) as { request?: OwnershipRequest; error?: string };

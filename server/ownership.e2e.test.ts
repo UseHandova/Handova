@@ -6,6 +6,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,7 +64,7 @@ async function call(a: PrivateKeyAccount | null, path: string, body?: unknown) {
 }
 async function submit(a: PrivateKeyAccount, fields: Record<string, string>, files: { name: string; type: string; bytes: number }[]) {
   const form = new FormData();
-  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  for (const [k, v] of Object.entries({ consent: 'yes', ...fields })) form.append(k, v);
   for (const f of files) form.append('files', new File([new Uint8Array(f.bytes).fill(7)], f.name, { type: f.type }));
   const res = await fetch(`${base}/api/ownership`, { method: 'POST', headers: { Authorization: `Bearer ${await session(a)}` }, body: form });
   return { status: res.status, body: await res.json() as Record<string, any> };
@@ -91,6 +92,9 @@ beforeAll(async () => {
 afterAll(() => { server?.close(); anvil?.kill(); });
 
 describe('submitting proof', () => {
+  test('the landlord must agree to how documents are handled first', async () => {
+    expect((await submit(LANDLORD, { listingId: '1', docType: 'c_of_o', consent: 'no' }, [pdf])).body.code).toBe('consent');
+  });
   test('only the listing owner can submit', async () => {
     expect((await submit(STRANGER, { listingId: '1', docType: 'c_of_o' }, [pdf])).body.code).toBe('not_owner');
   });
@@ -106,11 +110,19 @@ describe('submitting proof', () => {
     expect(r.body.code).toBe('no_files'); // filtered out
     expect((await submit(LANDLORD, { listingId: '1', docType: 'c_of_o' }, [{ ...pdf, bytes: 11 * 1024 * 1024 }])).status).toBe(413);
   });
-  test('the landlord submits; files are stored privately', async () => {
+  test('the landlord submits; files are encrypted on disk, with consent recorded', async () => {
     const r = await submit(LANDLORD, { listingId: '1', docType: 'c_of_o', note: 'Original C of O, page 1 and 2' }, [pdf, { name: 'p2.jpg', type: 'image/jpeg', bytes: 1000 }]);
-    expect(r.body.request).toMatchObject({ status: 'pending', docType: 'c_of_o', address: ADDRESS });
+    expect(r.body.request).toMatchObject({ status: 'pending', docType: 'c_of_o', address: ADDRESS, consentAt: expect.any(Number) });
     expect(r.body.request.files).toHaveLength(2);
-    expect(readdirSync(dir)).toHaveLength(2);
+    const onDisk = readdirSync(dir);
+    expect(onDisk).toHaveLength(2);
+    expect(onDisk.every(f => f.endsWith('.bin'))).toBe(true);                    // no .pdf/.jpg on disk
+    for (const f of onDisk) {
+      const raw = readFileSync(join(dir, f));
+      expect(raw.includes(Buffer.alloc(64, 7))).toBe(false);                      // the original bytes aren't there
+    }
+    const expected = createHash('sha256').update(Buffer.alloc(2048, 7)).digest('hex');
+    expect(r.body.request.files[0].sha256).toBe(expected);                        // fingerprint of the original
   });
   test('submitting again while under review is refused', async () => {
     expect((await submit(LANDLORD, { listingId: '1', docType: 'deed' }, [pdf])).body.code).toBe('pending');
@@ -121,7 +133,9 @@ describe('privacy and review', () => {
   let id = 0;
   test('documents are visible to the landlord and the admin only', async () => {
     id = (await call(LANDLORD, '/api/ownership/mine')).body.requests[0].id;
-    expect((await call(LANDLORD, `/api/ownership/${id}/file/0`)).res.headers.get('content-type')).toContain('application/pdf');
+    const own = await fetch(`${base}/api/ownership/${id}/file/0`, { headers: { Authorization: `Bearer ${await session(LANDLORD)}` } });
+    expect(own.headers.get('content-type')).toContain('application/pdf');
+    expect(Buffer.from(await own.arrayBuffer()).equals(Buffer.alloc(2048, 7))).toBe(true); // decrypted back exactly
     expect((await call(OWNER, `/api/ownership/${id}/file/0`)).status).toBe(200);
     expect((await call(STRANGER, `/api/ownership/${id}/file/0`)).status).toBe(404);
     expect((await fetch(`${base}/api/ownership/${id}/file/0`)).status).toBe(401);
@@ -138,10 +152,15 @@ describe('privacy and review', () => {
     expect(readdirSync(dir)).toHaveLength(0);
     expect((await call(null, '/api/ownership/verified')).body.verified).toEqual([]);
   });
-  test('after a rejection the landlord can resubmit; approval shows publicly', async () => {
+  test('after a rejection the landlord can resubmit; approval shows publicly and the files are deleted', async () => {
     const again = await submit(LANDLORD, { listingId: '1', docType: 'deed' }, [pdf]);
+    expect(readdirSync(dir)).toHaveLength(1);
     const r = await call(OWNER, `/api/ownership/${again.body.request.id}/review`, { decision: 'approve' });
-    expect(r.body.request.status).toBe('approved');
+    expect(r.body.request).toMatchObject({ status: 'approved', filesDeletedAt: expect.any(Number) });
+    expect(readdirSync(dir)).toHaveLength(0);
+    const mine = (await call(LANDLORD, '/api/ownership/mine')).body.requests.find((x: { id: number }) => x.id === again.body.request.id);
+    expect(mine.files[0]).toMatchObject({ available: false, sha256: expect.stringMatching(/^[0-9a-f]{64}$/) }); // fingerprint kept
+    expect((await call(OWNER, `/api/ownership/${again.body.request.id}/file/0`)).status).toBe(410);
     expect((await call(OWNER, `/api/ownership/${again.body.request.id}/review`, { decision: 'reject', reason: 'changed my mind' })).body.code).toBe('already_reviewed');
     const pub = (await call(null, '/api/ownership/verified')).body.verified;
     expect(pub).toEqual([{ landlord: LANDLORD.address.toLowerCase(), addressKey: '14 admiralty way lekki phase 1 lagos', approvedAt: expect.any(Number) }]);

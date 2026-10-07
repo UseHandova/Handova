@@ -59,6 +59,7 @@ function OwnershipSheet({ account, listingId, address, rejected, onClose }: { ac
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [consent, setConsent] = useState(false);
 
   function addFiles(list: FileList | null) {
     const ok = Array.from(list ?? []).filter(f => /^(image\/(jpeg|png|webp)|application\/pdf)$/.test(f.type));
@@ -71,6 +72,7 @@ function OwnershipSheet({ account, listingId, address, rejected, onClose }: { ac
   async function send() {
     if (!docType) { toast.error('Choose what kind of document this is.'); return; }
     if (!files.length) { toast.error('Add a photo or PDF of the document.'); return; }
+    if (!consent) { toast.error('Tick the box to agree to how we handle your documents.'); return; }
     setBusy(true);
     try {
       await submitOwnership(account, { listingId, docType, note }, files);
@@ -101,7 +103,7 @@ function OwnershipSheet({ account, listingId, address, rejected, onClose }: { ac
           )}
           <p className="text-sm flex items-start gap-2 px-3 py-2.5 rounded-xl" style={{ background: 'var(--surface-muted)', color: 'var(--ink-2)' }}>
             <Lock className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
-            Only the Handova team sees these documents. Tenants just see an “Ownership checked” badge on your listing.
+            Only the Handova team sees these documents. They're encrypted while we review them and deleted once we've decided. Tenants just see an “Ownership checked” badge.
           </p>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--muted)' }}>What are you sending?</p>
@@ -138,6 +140,13 @@ function OwnershipSheet({ account, listingId, address, rejected, onClose }: { ac
           <textarea value={note} onChange={e => setNote(e.target.value.slice(0, 500))} rows={2} placeholder="Anything we should know? e.g. the C of O is in my father's name — I've added the letter of administration"
             className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)', color: 'var(--ink)' }} />
           <p className="text-[11px]" style={{ color: 'var(--subtle)' }}>Tip: the name on the document should match the ID you verified with. If it doesn't, explain why in the note.</p>
+          <label className="flex gap-3 items-start p-3 rounded-xl cursor-pointer" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
+            <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--accent)]" aria-label="I agree to how Handova handles my documents" />
+            <span className="text-xs leading-relaxed" style={{ color: 'var(--ink-2)' }}>
+              I agree that Handova may store these documents, encrypted, only to check that I own or may let this property.
+              Only the Handova team can see them. They're deleted once reviewed; we keep only a fingerprint of each file and the decision.
+            </span>
+          </label>
           <button onClick={() => { void send(); }} disabled={busy} className="w-full h-12 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'var(--accent)' }}>
             {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</> : <><FileCheck2 className="w-4 h-4" /> Send for review</>}
           </button>

@@ -5,7 +5,12 @@
  * allocation letter, or a recent utility bill in their name at that address). The Handova admin (the escrow's
  * arbiter) reviews it and approves or rejects with a reason.
  *
- * Documents are private: stored outside the public media folder and served only to that landlord and the admin.
+ * Documents are private and short-lived:
+ *   - the landlord must consent before uploading (recorded with a timestamp);
+ *   - each file is encrypted on disk (AES-256-GCM, key from OWNERSHIP_KEY) and served only to that landlord
+ *     and the admin;
+ *   - once reviewed, the files are deleted — approved or rejected. We keep only each file's SHA-256 fingerprint and
+ *     the decision, so a later dispute can be checked against copies the landlord still holds.
  * Approval is tied to (landlord, normalised street address), so it survives edits that republish the listing,
  * and drops off if the address changes. Tenants only ever see "Ownership checked" and the date.
  */
@@ -13,12 +18,12 @@
 import type { Express, Request, Response } from 'express';
 import express from 'express';
 import multer from 'multer';
-import { randomBytes } from 'node:crypto';
-import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseAbi } from 'viem';
 import { db } from './db';
-import { chainClient, requireSession } from './auth';
+import { chainClient, requireSession, serverHmac } from './auth';
 import type { FeatureConfig } from './features';
 
 const ABI = parseAbi([
@@ -44,8 +49,32 @@ export const addressKey = (a: string) => a.toLowerCase().replace(/[^a-z0-9]+/g, 
 interface Req {
   id: number; landlord: string; address_key: string; address: string; listing_id: string; doc_type: string; note: string;
   files: string; status: 'pending' | 'approved' | 'rejected'; reason: string; created_at: number; reviewed_at: number | null;
+  consent_at: number | null; files_deleted_at: number | null;
 }
-type StoredFile = { name: string; file: string; mime: string };
+/** `enc`: encrypted on disk. `sha256`: fingerprint of the original, kept after the file is deleted. */
+type StoredFile = { name: string; file: string; mime: string; sha256?: string; size?: number; enc?: boolean };
+
+/**
+ * Key for documents at rest. Set OWNERSHIP_KEY (64 hex chars) in production. Without it, a key is derived
+ * from the session secret, so changing that secret would make pending documents unreadable.
+ */
+function docKey(): Buffer {
+  const k = process.env.OWNERSHIP_KEY ?? '';
+  if (/^[0-9a-fA-F]{64}$/.test(k)) return Buffer.from(k, 'hex');
+  return Buffer.from(serverHmac('ownership-documents-at-rest'), 'hex');
+}
+/** File layout: 12-byte IV ‖ 16-byte auth tag ‖ ciphertext. */
+function encrypt(plain: Buffer): Buffer {
+  const iv = randomBytes(12);
+  const c = createCipheriv('aes-256-gcm', docKey(), iv);
+  const body = Buffer.concat([c.update(plain), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), body]);
+}
+function decrypt(blob: Buffer): Buffer {
+  const d = createDecipheriv('aes-256-gcm', docKey(), blob.subarray(0, 12));
+  d.setAuthTag(blob.subarray(12, 28));
+  return Buffer.concat([d.update(blob.subarray(28)), d.final()]);
+}
 
 export function mountOwnership(app: Express, config: FeatureConfig | null, dir = process.env.OWNERSHIP_DIR || 'server/data/ownership') {
   const root = resolve(dir);
@@ -65,6 +94,10 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
     reviewed_at INTEGER
   );
   CREATE INDEX IF NOT EXISTS ownership_landlord ON ownership_requests (landlord, address_key);`);
+  // Columns added after the first version.
+  const cols = new Set((db().query('PRAGMA table_info(ownership_requests)').all() as { name: string }[]).map(c => c.name));
+  if (!cols.has('consent_at')) db().exec('ALTER TABLE ownership_requests ADD COLUMN consent_at INTEGER');
+  if (!cols.has('files_deleted_at')) db().exec('ALTER TABLE ownership_requests ADD COLUMN files_deleted_at INTEGER');
 
   const bad = (res: Response, status: number, error: string, code = 'bad_request') => res.status(status).json({ ok: false, code, error });
   const lower = (a: string) => a.toLowerCase();
@@ -76,8 +109,8 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
   const view = (r: Req, withFiles = false) => ({
     id: r.id, landlord: r.landlord, address: r.address, addressKey: r.address_key, listingId: r.listing_id,
     docType: r.doc_type, docLabel: DOC_TYPES[r.doc_type] ?? r.doc_type, note: r.note, status: r.status, reason: r.reason,
-    createdAt: r.created_at, reviewedAt: r.reviewed_at,
-    ...(withFiles && { files: (JSON.parse(r.files) as StoredFile[]).map((f, i) => ({ index: i, name: f.name, mime: f.mime })) }),
+    createdAt: r.created_at, reviewedAt: r.reviewed_at, consentAt: r.consent_at, filesDeletedAt: r.files_deleted_at,
+    ...(withFiles && { files: (JSON.parse(r.files) as StoredFile[]).map((f, i) => ({ index: i, name: f.name, mime: f.mime, sha256: f.sha256 ?? null, available: !r.files_deleted_at })) }),
   });
 
   const upload = multer({
@@ -114,6 +147,7 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
     const note = String(req.body?.note ?? '').trim().slice(0, 500);
     let listingId: bigint;
     try { listingId = BigInt(String(req.body?.listingId)); } catch { return bad(res, 400, 'Invalid listing.'); }
+    if (req.body?.consent !== 'yes') return bad(res, 400, 'Please agree to how we handle your documents before sending them.', 'consent');
     if (!(docType in DOC_TYPES)) return bad(res, 400, 'Choose what kind of document this is.', 'doc_type');
     if (!files.length) return bad(res, 400, 'Add at least one photo or PDF of the document.', 'no_files');
 
@@ -134,12 +168,13 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
     if (existing?.status === 'pending') return bad(res, 409, 'Your documents for this address are already being reviewed.', 'pending');
 
     const stored: StoredFile[] = files.map(f => {
-      const file = `${randomBytes(12).toString('hex')}.${FILE_TYPES[f.mimetype]}`;
-      writeFileSync(join(root, file), f.buffer, { mode: 0o600 });
-      return { name: f.originalname.slice(0, 80), file, mime: f.mimetype };
+      const file = `${randomBytes(12).toString('hex')}.bin`;
+      writeFileSync(join(root, file), encrypt(f.buffer), { mode: 0o600 });
+      return { name: f.originalname.slice(0, 80), file, mime: f.mimetype, sha256: createHash('sha256').update(f.buffer).digest('hex'), size: f.size, enc: true };
     });
-    const id = Number(db().query("INSERT INTO ownership_requests (landlord, address_key, address, listing_id, doc_type, note, files, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)")
-      .run(lower(me), key, address, String(listingId), docType, note, JSON.stringify(stored), Date.now()).lastInsertRowid);
+    const now = Date.now();
+    const id = Number(db().query("INSERT INTO ownership_requests (landlord, address_key, address, listing_id, doc_type, note, files, status, created_at, consent_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
+      .run(lower(me), key, address, String(listingId), docType, note, JSON.stringify(stored), now, now).lastInsertRowid);
     res.json({ ok: true, request: view(db().query('SELECT * FROM ownership_requests WHERE id = ?').get(id) as Req, true) });
   });
 
@@ -150,10 +185,14 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
     if (!r || (lower(r.landlord) !== lower(me) && !(await isAdmin(me)))) return bad(res, 404, 'Document not found.', 'not_found');
     const f = (JSON.parse(r.files) as StoredFile[])[Number(req.params.index)];
     if (!f) return bad(res, 404, 'Document not found.', 'not_found');
+    if (r.files_deleted_at) return bad(res, 410, 'This document was deleted after review. Only its fingerprint is kept.', 'deleted');
+    let body: Buffer;
+    try { body = f.enc ? decrypt(readFileSync(join(root, f.file))) : readFileSync(join(root, f.file)); }
+    catch { return bad(res, 404, 'Document not found.', 'not_found'); }
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Content-Type', f.mime);
     res.setHeader('Content-Disposition', `inline; filename="${f.name.replace(/[^\w.\- ]/g, '_')}"`);
-    res.sendFile(f.file, { root }, err => { if (err && !res.headersSent) res.status(404).end(); });
+    res.send(body);
   });
 
   /** Admin: the review queue. */
@@ -175,10 +214,11 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
     const reason = String(req.body?.reason ?? '').trim().slice(0, 300);
     if (decision !== 'approve' && decision !== 'reject') return bad(res, 400, 'Choose approve or reject.');
     if (decision === 'reject' && reason.length < 5) return bad(res, 400, 'Tell the landlord why, so they can fix it.', 'reason');
-    db().query('UPDATE ownership_requests SET status = ?, reason = ?, reviewed_at = ? WHERE id = ?')
-      .run(decision === 'approve' ? 'approved' : 'rejected', reason, Date.now(), r.id);
-    // Rejected documents aren't needed any more — delete them rather than keep people's papers around.
-    if (decision === 'reject') for (const f of JSON.parse(r.files) as StoredFile[]) { try { unlinkSync(join(root, f.file)); } catch { /* already gone */ } }
+    // Once reviewed, the papers themselves aren't needed — delete them and keep only fingerprints + the decision.
+    for (const f of JSON.parse(r.files) as StoredFile[]) { try { unlinkSync(join(root, f.file)); } catch { /* already gone */ } }
+    const now = Date.now();
+    db().query('UPDATE ownership_requests SET status = ?, reason = ?, reviewed_at = ?, files_deleted_at = ? WHERE id = ?')
+      .run(decision === 'approve' ? 'approved' : 'rejected', reason, now, now, r.id);
     res.json({ ok: true, request: view(db().query('SELECT * FROM ownership_requests WHERE id = ?').get(r.id) as Req) });
   });
 
