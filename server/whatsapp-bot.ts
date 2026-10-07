@@ -36,6 +36,8 @@ import { mountInspections } from './inspections';
 import { mountChat } from './chat';
 import { handleInboundLogin, mountPhoneAuth } from './phone-auth';
 import { mountOwnership } from './ownership';
+import { mountAdmin } from './admin';
+import { backupConfigFromEnv, scheduleBackups } from './backup';
 import { openDrafts, type Draft } from './drafts';
 
 const app = express();
@@ -390,6 +392,7 @@ mountInspections(app, featureConfigFromEnv(), whatsappNotify);
 mountChat(app, featureConfigFromEnv(), whatsappNotify);
 mountPhoneAuth(app);
 mountOwnership(app, featureConfigFromEnv());
+mountAdmin(app, featureConfigFromEnv());
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -403,6 +406,9 @@ app.get('/api/health', (_req, res) => {
     },
   });
 });
+
+// Encrypted daily backups of the database (see server/backup.ts).
+scheduleBackups(backupConfigFromEnv());
 
 app.listen(PORT, () => {
   console.log(`[Handova Bot] Server running on port ${PORT}`);

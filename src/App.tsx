@@ -8,6 +8,7 @@ import RolePicker from '@/components/RolePicker';
 import ChainStatusBanner from '@/components/ChainStatusBanner';
 import { useCaptureReferral } from '@/components/ReferralSystem';
 import ChatCenter from '@/components/ChatCenter';
+import PrivacyNotice from '@/components/PrivacyNotice';
 import Header from '@/components/Header';
 import TabBar from '@/components/TabBar';
 import { navigate as go, rememberRole, rememberedRole, roleFromPath, usePath, type Role } from '@/lib/router';
@@ -40,7 +41,7 @@ export default function App() {
       go(`/landlord${/[?&]wa=/.test(search) ? '/whatsapp' : ''}${search}`, { replace: true });
     } else if (path === '/' && rememberedRole() && [null, 'app'].includes(new URLSearchParams(search).get('preview'))) {
       go(`/${rememberedRole()}${search}`, { replace: true });
-    } else if (path !== '/' && !role) {
+    } else if (path !== '/' && path !== '/privacy' && !role) {
       go(`/${search}`, { replace: true });
     }
   }, [path, role]);
@@ -102,6 +103,8 @@ export default function App() {
     );
   }
 
+  // Public pages work without signing in.
+  if (path === '/privacy') return <PrivacyNotice />;
   if (!langChosen) return <LanguageWelcome />;
   if (!account) return <AuthGate onAuth={handleAuth} />;
   return <MainApp account={account} address={address} role={role} tab={tab} navigate={navigate}

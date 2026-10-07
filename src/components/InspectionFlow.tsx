@@ -275,6 +275,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                       </label>
                     </div>
                   )}
+                  {!rebooking && <p className="text-[11px] -mt-2" style={{ color: 'var(--subtle)' }}>Your name and number go only to this landlord. <a href="/privacy" target="_blank" rel="noreferrer" className="underline">Privacy</a></p>}
                   <input value={note} onChange={e => setNote(e.target.value.slice(0, 300))} placeholder="Note for the landlord (optional), e.g. coming with my sister"
                     className="w-full h-11 px-3 rounded-xl text-sm outline-none" style={{ ...card, color: 'var(--ink)' }} />
                   <button onClick={() => { void submitBooking(); }} disabled={busy === 'book'} className={btn} style={primary}>

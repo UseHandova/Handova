@@ -317,7 +317,7 @@ export default function AuthGate({ onAuth }: Props) {
 
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
           className="text-center text-xs mt-6" style={{ color: 'var(--subtle)' }}>
-          {t('powered_by')}
+          {t('powered_by')} · <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2">Privacy</a>
         </motion.p>
       </div>
     </div>

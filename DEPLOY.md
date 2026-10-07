@@ -82,5 +82,6 @@ When these are set, uploads go to the bucket and listings store the public URL. 
 
 - Make your app account the dispute **arbiter** (done on testnet: `0xcb03…1c35`).
 - Run the test suites before each release: `bun run contracts:test` and `bun run test:server`.
-- Back up the volume (`server/data`) — it is the only copy of off-chain data.
+- Back up the volume (`server/data`) — it is the only copy of off-chain data. The server does this itself: an encrypted snapshot of the database and identity fingerprints every day, kept 14 days in `server/data/backups` (needs `BACKUP_KEY` or `OWNERSHIP_KEY`). Set `BACKUP_S3_BUCKET` (+ `BACKUP_S3_ENDPOINT`, keys) to also copy each one off the server; only that protects against losing the disk. Ownership documents are deliberately not backed up.
+- Take one now: `bun run backup`. Restore: stop the server, run `bun server/backup.ts restore <file.backup> server/data/restored.db`, then move it into place as `rentflow.db`.
 - Set `OWNERSHIP_KEY` (`openssl rand -hex 32`) and keep it with your backups. Ownership documents are encrypted with it while pending and deleted once reviewed; only fingerprints and decisions are kept.

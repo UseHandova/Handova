@@ -111,7 +111,7 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
 
       {step === 'number' && (<>
         <h2 className="display text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>Continue with your phone number</h2>
-        <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>We'll confirm it's yours on WhatsApp. No SMS, no charges.</p>
+        <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>We'll confirm it's yours on WhatsApp. No SMS, no charges. <a href="/privacy" target="_blank" rel="noreferrer" className="underline">How we use your number</a></p>
         <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Phone number</label>
         <input value={phone} onChange={e => { setPhone(e.target.value.replace(/[^\d+ ]/g, '').slice(0, 18)); setError(null); }}
           inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" autoFocus aria-label="Phone number"

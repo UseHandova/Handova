@@ -144,7 +144,8 @@ function OwnershipSheet({ account, listingId, address, rejected, onClose }: { ac
             <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--accent)]" aria-label="I agree to how Handova handles my documents" />
             <span className="text-xs leading-relaxed" style={{ color: 'var(--ink-2)' }}>
               I agree that Handova may store these documents, encrypted, only to check that I own or may let this property.
-              Only the Handova team can see them. They're deleted once reviewed; we keep only a fingerprint of each file and the decision.
+              Only the Handova team can see them. They're deleted once reviewed; we keep only a fingerprint of each file and the decision.{' '}
+              <a href="/privacy" target="_blank" rel="noreferrer" className="underline" onClick={e => e.stopPropagation()}>Privacy notice</a>
             </span>
           </label>
           <button onClick={() => { void send(); }} disabled={busy} className="w-full h-12 rounded-2xl font-semibold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'var(--accent)' }}>
