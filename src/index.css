@@ -41,19 +41,19 @@
 
 /* ─── Dark ───────────────────────────────────────────────────────────────── */
 .dark {
-  --popover: #1a1e1c;
-  --bg: #0e1110;
+  --popover: #18221d;
+  --bg: #0d1611;
   --bg-gradient: transparent;
   --backdrop:
-    radial-gradient(1100px 520px at 0% -8%, rgba(31, 158, 97, 0.16), transparent 62%),
-    radial-gradient(900px 480px at 100% -4%, rgba(45, 140, 130, 0.10), transparent 58%),
-    radial-gradient(1000px 600px at 50% 115%, rgba(31, 158, 97, 0.06), transparent 60%),
-    linear-gradient(180deg, #0f1312 0%, #0c0f0e 100%);
+    radial-gradient(1200px 720px at 88% 6%, rgba(52, 199, 122, 0.11), transparent 62%),
+    radial-gradient(1000px 700px at 6% 96%, rgba(31, 158, 97, 0.09), transparent 60%),
+    radial-gradient(900px 520px at 0% -8%, rgba(31, 158, 97, 0.10), transparent 60%),
+    linear-gradient(160deg, #13211a 0%, #0f1a14 45%, #0b130f 100%);
   --grid-dot: rgba(255, 255, 255, 0.05);
-  --bar: rgba(14, 17, 16, 0.72);
-  --surface: #161a18;
-  --surface-strong: #1c201e;
-  --surface-muted: #191d1b;
+  --bar: rgba(13, 22, 17, 0.72);
+  --surface: #16201b;
+  --surface-strong: #1b2620;
+  --surface-muted: #19231e;
   --ink: #eef1ef;
   --ink-2: #d2d8d4;
   --muted: #9ba5a0;
@@ -68,7 +68,7 @@
   --success: #45c985;
   --danger: #ef7186;
   --warning: #f2b45a;
-  --glass-card: #161a18;
+  --glass-card: #16201b;
   --glass-border: rgba(255, 255, 255, 0.07);
   --shadow-card: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.25);
 }
