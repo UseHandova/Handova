@@ -50,20 +50,46 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
 
   const disputes = useMemo(() => (chain.data?.escrows ?? []).filter(e => e.status === EscrowStatus.Disputed), [chain.data]);
 
+  // Only what's real: hidden (moderated) listings and refunded payments are left out of the headline numbers.
   const STATS = useMemo(() => {
     const listings = chain.data?.listings ?? [];
     const escrows = chain.data?.escrows ?? [];
-    const users = new Set([...listings.map(l => l.landlord.toLowerCase()), ...escrows.map(e => e.tenant.toLowerCase())]);
-    const volume = escrows.reduce((sum, e) => sum + (e.listing ? e.listing.rentUsdc + e.listing.depositUsdc : 0), 0);
+    const hiddenIds = new Set((hidden.data?.items ?? []).map(h => h.listingId));
+    const live = listings.filter(l => l.active && l.escrowId === 0n && !hiddenIds.has(String(l.id)));
+    const real = escrows.filter(e => e.status !== EscrowStatus.Refunded);
+    const refunded = escrows.length - real.length;
+    const paid = escrows.filter(e => [EscrowStatus.Active, EscrowStatus.Released, EscrowStatus.Ending, EscrowStatus.Disputed].includes(e.status));
+    const landlords = new Set([...live.map(l => l.landlord.toLowerCase()), ...real.map(e => e.listing?.landlord.toLowerCase()).filter((a): a is string => !!a)]);
+    const tenants = new Set(real.map(e => e.tenant.toLowerCase()));
+    const verified = new Set(listings.filter(l => l.landlordVerifiedAt > 0 && landlords.has(l.landlord.toLowerCase())).map(l => l.landlord.toLowerCase()));
+    const rentPaid = paid.reduce((sum, e) => sum + (e.listing?.rentUsdc ?? 0), 0);
+    const heldNow = real.reduce((sum, e) => sum + e.heldUsdc, 0);
     return [
-      { label: 'Onchain Users', value: String(users.size), icon: Users, color: 'var(--accent)' },
-      { label: 'Active Listings', value: String(listings.filter(l => l.active && l.escrowId === 0n).length), icon: Building2, color: '#7c3aed' },
-      { label: 'Total Escrows', value: String(escrows.length), icon: ShieldCheck, color: '#0e7490' },
-      { label: 'Platform Volume', value: formatNaira(volume), icon: TrendingUp, color: '#b45309' },
-      { label: 'Verified Landlords', value: String(new Set(listings.filter(l => l.landlordVerifiedAt > 0).map(l => l.landlord.toLowerCase())).size), icon: Eye, color: '#f59e0b' },
-      { label: 'Open Disputes', value: String(disputes.length), icon: AlertTriangle, color: '#ef4444' },
+      { label: 'Live listings', value: String(live.length), sub: hiddenIds.size ? `${hiddenIds.size} hidden by moderation` : 'Visible to tenants', icon: Building2, color: '#7c3aed' },
+      { label: 'Landlords', value: String(landlords.size), sub: `${verified.size} identity-verified`, icon: Users, color: 'var(--accent)' },
+      { label: 'Tenancies', value: String(real.length), sub: refunded ? `${refunded} refunded (not counted)` : `${tenants.size} tenant${tenants.size === 1 ? '' : 's'}`, icon: ShieldCheck, color: '#0e7490' },
+      { label: 'Rent paid to landlords', value: formatNaira(rentPaid), sub: 'After tenants moved in', icon: TrendingUp, color: '#b45309' },
+      { label: 'Held in escrow now', value: formatNaira(heldNow), sub: 'Rent and caution fees', icon: Eye, color: '#f59e0b' },
+      { label: 'Open disputes', value: String(disputes.length), sub: disputes.length ? 'Needs a decision' : 'Nothing to resolve', icon: AlertTriangle, color: '#ef4444' },
     ];
-  }, [chain.data, disputes]);
+  }, [chain.data, disputes, hidden.data]);
+
+  // The page renders only after the server confirms, from a signed-in session, that this wallet is the arbiter.
+  const serverAdmin = useQuery({
+    queryKey: ['admin-me', address.toLowerCase()],
+    enabled: isAdmin,
+    queryFn: () => api<{ admin: boolean }>(account, '/api/admin/me').then(r => r.admin),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const confirmed = isAdmin && serverAdmin.data === true;
+  const offchain = useQuery({
+    queryKey: ['admin-stats'],
+    enabled: confirmed,
+    queryFn: () => api<{ phoneAccounts: number; inspections: { open: number; completed: number; total: number }; chats: { conversations: number; messagesThisWeek: number };
+      ownership: { pending: number; approved: number }; reviews: number; openRepairs: number }>(account, '/api/admin/stats'),
+    refetchInterval: 60_000,
+  });
 
   async function resolve(escrowId: bigint, landlordShare: number) {
     const key = `${escrowId}-${landlordShare}`;
@@ -126,8 +152,18 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
           </button>
         </div>
 
-        {/* Access check */}
-        {!isAdmin ? (
+        {/* Access check: quick onchain hint first, then the server confirms from your signed session */}
+        {isAdmin && serverAdmin.isLoading ? (
+          <div className="flex flex-col items-center py-16 gap-3 text-center">
+            <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} />
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>Confirming you're the admin… approve with your passkey if asked.</p>
+          </div>
+        ) : isAdmin && serverAdmin.isError ? (
+          <div className="flex flex-col items-center py-16 gap-3 text-center">
+            <p className="text-sm max-w-xs" style={{ color: 'var(--danger)' }}>{/NotAllowedError|cancel/i.test(String(serverAdmin.error)) ? 'Sign-in was cancelled.' : serverAdmin.error.message}</p>
+            <button onClick={() => { void serverAdmin.refetch(); }} className="h-10 px-5 rounded-xl text-sm font-semibold" style={{ background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)' }}>Try again</button>
+          </div>
+        ) : !confirmed ? (
           <div className="flex flex-col items-center py-16 gap-4 text-center">
             <Shield className="w-12 h-12" style={{ color: 'var(--danger)' }} />
             <h2 className="font-bold text-lg" style={{ color: 'var(--ink)' }}>Access Restricted</h2>
@@ -162,10 +198,36 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
                         style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', border: '1px solid var(--glass-border)', boxShadow: 'var(--shadow-card)' }}>
                         <s.icon className="w-5 h-5 mb-2" style={{ color: s.color }} />
                         <p className="display text-2xl font-bold tabular-nums" style={{ color: 'var(--ink)', letterSpacing: '-0.03em' }}>{s.value}</p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>{s.label}</p>
+                        <p className="text-xs mt-0.5 font-medium" style={{ color: 'var(--ink-2)' }}>{s.label}</p>
+                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--subtle)' }}>{s.sub}</p>
                       </motion.div>
                     ))}
                   </div>
+                  <p className="text-[11px] mt-2" style={{ color: 'var(--subtle)' }}>Onchain, from the escrow contract on Arc. Hidden listings and refunded payments aren't counted.</p>
+
+                  <h3 className="text-xs font-semibold uppercase tracking-wider mt-6 mb-2" style={{ color: 'var(--muted)' }}>Activity in Handova</h3>
+                  {offchain.isLoading ? (
+                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
+                  ) : offchain.isError ? (
+                    <p className="text-sm" style={{ color: 'var(--danger)' }}>{offchain.error.message}</p>
+                  ) : offchain.data && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {[
+                        ['Inspections in progress', offchain.data.inspections.open, `${offchain.data.inspections.completed} completed`],
+                        ['Chats', offchain.data.chats.conversations, `${offchain.data.chats.messagesThisWeek} messages this week`],
+                        ['Ownership to review', offchain.data.ownership.pending, `${offchain.data.ownership.approved} approved`],
+                        ['Phone sign-ins', offchain.data.phoneAccounts, 'Accounts using a phone number'],
+                        ['Reviews', offchain.data.reviews, 'From tenants who moved in'],
+                        ['Open repairs', offchain.data.openRepairs, 'Reported by tenants'],
+                      ].map(([label, value, sub]) => (
+                        <div key={String(label)} className="rounded-2xl p-4" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                          <p className="display text-xl font-bold tabular-nums" style={{ color: 'var(--ink)' }}>{value}</p>
+                          <p className="text-xs mt-0.5 font-medium" style={{ color: 'var(--ink-2)' }}>{label}</p>
+                          <p className="text-[11px] mt-0.5" style={{ color: 'var(--subtle)' }}>{sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </motion.div>
               )}
 

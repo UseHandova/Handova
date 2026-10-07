@@ -232,10 +232,10 @@ export function formatCountdown(untilMs: number, now: number) {
   return `${days} day${days > 1 ? 's' : ''}`;
 }
 
-/** Admin = the escrow's onchain dispute arbiter (or VITE_ADMIN_ADDRESS for older deployments without one). */
+/** Admin = the escrow's onchain dispute arbiter. (A quick UI hint only — the server confirms it from a signed session.) */
 export function useIsAdmin(address: string) {
   const arbiter = useChainState().data?.arbiter;
-  return sameAddress(address, arbiter) || sameAddress(address, import.meta.env.VITE_ADMIN_ADDRESS as string | undefined);
+  return sameAddress(address, arbiter);
 }
 
 /** Current time that re-renders every minute, for countdowns and deadline checks. */
