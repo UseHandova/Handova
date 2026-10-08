@@ -10,15 +10,16 @@
 
 import type { Express, Request, Response } from 'express';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { createPublicClient, http, isAddress, isHex, type Address } from 'viem';
+import { createPublicClient, isAddress, isHex, type Address } from 'viem';
 import { arcTestnet } from 'viem/chains';
+import { arcTransport } from '../src/lib/arc-rpc';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CHALLENGE_TTL_MS = 10 * 60_000;
 
 export const chainClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(process.env.ARC_RPC_URL || arcTestnet.rpcUrls.default.http[0], { retryCount: 3 }),
+  transport: arcTransport(process.env.ARC_RPC_URL),
 });
 
 const secret = () => process.env.SESSION_SECRET

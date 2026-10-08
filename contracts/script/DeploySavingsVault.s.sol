@@ -7,7 +7,7 @@ import {RentSavingsVault} from "../RentSavingsVault.sol";
 /// @notice Deploys RentSavingsVault (no owner, no admin).
 /// Usage:
 ///   forge script contracts/script/DeploySavingsVault.s.sol \
-///     --rpc-url https://rpc.testnet.arc.network --account <keystore-name> --broadcast
+///     --rpc-url https://rpc.testnet.arc.io --account <keystore-name> --broadcast
 contract DeploySavingsVault is Script {
     address constant ARC_TESTNET_USDC = 0x3600000000000000000000000000000000000000;
 

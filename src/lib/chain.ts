@@ -5,9 +5,10 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createPublicClient, encodeFunctionData, formatUnits, http, type Address } from 'viem';
+import { createPublicClient, encodeFunctionData, formatUnits, type Address } from 'viem';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { arcTestnet } from 'viem/chains';
+import { arcTransport } from '@/lib/arc-rpc';
 import { ESCROW_ABI, ESCROW_ADDRESS, EscrowStatus } from '@/lib/contracts';
 import { bundlerClient } from '@/lib/wallet';
 
@@ -16,7 +17,7 @@ export const MOVE_IN_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 export const DEPOSIT_REVIEW_MS = 7 * 24 * 60 * 60 * 1000;
 export const DISPUTE_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000;
 
-const readClient = createPublicClient({ chain: arcTestnet, transport: http() });
+const readClient = createPublicClient({ chain: arcTestnet, transport: arcTransport(import.meta.env.VITE_ARC_RPC_URL as string | undefined) });
 const escrowContract = { address: ESCROW_ADDRESS, abi: ESCROW_ABI } as const;
 
 /** Free-form metadata a landlord stores with a listing (JSON in metadataUri). */

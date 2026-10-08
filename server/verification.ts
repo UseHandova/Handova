@@ -16,9 +16,10 @@ import express, { type Express, type Request as Req, type Response as Res } from
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { createPublicClient, createWalletClient, http, isAddress, isHex, type Address, type Chain, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, isAddress, isHex, type Address, type Chain, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { arcTestnet } from 'viem/chains';
+import { arcTransport } from '../src/lib/arc-rpc';
 
 const ESCROW_VERIFY_ABI = [
   { inputs: [{ name: 'landlord', type: 'address' }, { name: 'verified', type: 'bool' }], name: 'setVerified', outputs: [], stateMutability: 'nonpayable', type: 'function' },
@@ -54,7 +55,7 @@ export interface VerificationConfig {
 export function configFromEnv(env = process.env): VerificationConfig {
   const verifierPrivateKey = env.VERIFIER_PRIVATE_KEY as Hex | undefined;
   return {
-    rpcUrl: env.ARC_RPC_URL || arcTestnet.rpcUrls.default.http[0],
+    rpcUrl: env.ARC_RPC_URL || '', // empty = Arc's official endpoints with failover (src/lib/arc-rpc.ts)
     escrowAddress: (env.ESCROW_ADDRESS || env.VITE_ESCROW_ADDRESS) as Address | undefined,
     verifierPrivateKey,
     dojahAppId: env.DOJAH_APP_ID || undefined,
@@ -89,9 +90,9 @@ const challengeMessage = (address: Address, nonce: string, issuedAt: string) =>
 
 export function mountVerification(app: Express, config: VerificationConfig = configFromEnv()) {
   const chain = config.chain ?? arcTestnet;
-  const publicClient = createPublicClient({ chain, transport: http(config.rpcUrl) });
+  const publicClient = createPublicClient({ chain, transport: arcTransport(config.rpcUrl || undefined) });
   const verifier = config.verifierPrivateKey ? privateKeyToAccount(config.verifierPrivateKey) : null;
-  const walletClient = verifier ? createWalletClient({ account: verifier, chain, transport: http(config.rpcUrl) }) : null;
+  const walletClient = verifier ? createWalletClient({ account: verifier, chain, transport: arcTransport(config.rpcUrl || undefined) }) : null;
 
   const challenges = new Map<string, { address: Address; message: string; expiresAt: number }>();
   const attempts = new Map<string, { count: number; resetAt: number }>();

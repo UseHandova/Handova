@@ -14,7 +14,7 @@ import {RentFlowNFT} from "../RentFlowNFT.sol";
 ///
 /// Usage:
 ///   forge script contracts/script/DeployRentFlow.s.sol \
-///     --rpc-url https://rpc.testnet.arc.network --account <keystore-name> --broadcast
+///     --rpc-url https://rpc.testnet.arc.io --account <keystore-name> --broadcast
 contract DeployRentFlow is Script {
     address constant ARC_TESTNET_USDC = 0x3600000000000000000000000000000000000000;
 

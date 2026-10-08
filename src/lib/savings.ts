@@ -4,7 +4,8 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { createPublicClient, encodeFunctionData, http, parseAbi, type Address } from 'viem';
+import { createPublicClient, encodeFunctionData, parseAbi, type Address } from 'viem';
+import { arcTransport } from '@/lib/arc-rpc';
 import { arcTestnet } from 'viem/chains';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { api, hasSession } from '@/lib/api';
@@ -20,7 +21,7 @@ const VAULT_ABI = parseAbi([
   'function withdraw(uint256 amount, address to)',
 ]);
 const ERC20 = parseAbi(['function approve(address,uint256) returns (bool)', 'function balanceOf(address) view returns (uint256)']);
-const read = createPublicClient({ chain: arcTestnet, transport: http(undefined, { retryCount: 3 }) });
+const read = createPublicClient({ chain: arcTestnet, transport: arcTransport(import.meta.env.VITE_ARC_RPC_URL as string | undefined) });
 
 export interface SavingsPlan { goalNgn: number; startAt: number; dueAt: number; frequency: Frequency; day: number; label: string; reminders: boolean }
 

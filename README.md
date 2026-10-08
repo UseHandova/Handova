@@ -139,7 +139,7 @@ One command deploys the escrow, deploys the NFT pointing at it, and links them:
 ```bash
 cast wallet import rentflow-deployer --interactive   # paste your testnet private key once; stored encrypted
 forge script contracts/script/DeployHandova.s.sol \
-  --rpc-url https://rpc.testnet.arc.network --account rentflow-deployer --broadcast
+  --rpc-url https://rpc.testnet.arc.io --account rentflow-deployer --broadcast
 ```
 
 Set `ARBITER` to your **Handova app wallet address** (the passkey account shown in the app header) so you can resolve disputes from the Admin dashboard. Prefix the command with `ARBITER=0xYourAppAddress`.
