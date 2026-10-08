@@ -16,7 +16,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { db } from './db';
-import { requireSession } from './auth';
+import { chainClient, requireSession } from './auth';
+import { parseAbi } from 'viem';
 import { isArbiter } from './admin';
 import { openFile, sealFile } from './file-crypto';
 import { canPay, type Notifier } from './inspections';
@@ -25,6 +26,8 @@ import type { FeatureConfig } from './features';
 const FILE_TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
 const MAX_FILES = 3, MAX_BYTES = 10 * 1024 * 1024;
 const YEAR_MS = 365 * 86_400_000;
+const USDC_TO_NGN = 1600;
+const LISTING_ABI = parseAbi(['function listings(uint256) view returns (address landlord, uint256 rentAmountUsdc, uint256 depositAmountUsdc, bool active, string metadataUri)']);
 
 type Status = 'awaiting_landlord' | 'confirmed' | 'disputed' | 'rejected';
 type StoredFile = { name: string; file: string; mime: string; sha256: string };
@@ -120,6 +123,14 @@ export function mountCash(app: Express, config: FeatureConfig | null, notify: No
     const amount = Math.round(Number(req.body?.amountNgn));
     const paidOn = String(req.body?.paidOn ?? '');
     if (!(amount >= 1000)) return bad(res, 400, 'Enter how much you paid, in naira.', 'amount');
+    // The first payment is always in full: a year's rent plus the caution fee, as listed on the blockchain.
+    if (!config) return bad(res, 503, 'Cash payments are not configured on the server.', 'unavailable');
+    let fullNgn: number;
+    try {
+      const [, rent, deposit] = await chainClient.readContract({ address: config.escrow, abi: LISTING_ABI, functionName: 'listings', args: [BigInt(insp.listing_id)] });
+      fullNgn = Math.round((Number(rent + deposit) / 1e6) * USDC_TO_NGN);
+    } catch { return bad(res, 502, 'Could not check the price on the blockchain. Please try again in a moment.', 'chain'); }
+    if (amount < fullNgn) return bad(res, 400, `The first payment has to be in full: ${naira(fullNgn)} (a year's rent plus the caution fee).`, 'not_full');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn) || paidOn > lagosToday() || Date.parse(paidOn) < Date.now() - 90 * 86_400_000) {
       return bad(res, 400, 'Enter the date you paid (today or in the last 90 days).', 'paid_on');
     }

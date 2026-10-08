@@ -61,15 +61,13 @@ export function TenantCashPay({ account, inspection, expectedNgn }: { account: S
   const mine = cash.payments.filter(p => p.inspectionId === inspection.id);
   const current = mine.find(p => p.status !== 'rejected');
   const rejected = !current ? mine.find(p => p.status === 'rejected') : undefined;
-  const [amount, setAmount] = useState(String(Math.round(expectedNgn)));
   const [paidOn, setPaidOn] = useState(lagosToday());
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    const n = Number(amount.replace(/\D/g, ''));
-    if (!(n >= 1000)) { toast.error('Enter how much you paid, in naira.'); return; }
+    const n = Math.round(expectedNgn);
     if (!files.length) { toast.error('Add a photo of the receipt the landlord gave you.'); return; }
     setBusy(true);
     try {
@@ -122,14 +120,14 @@ export function TenantCashPay({ account, inspection, expectedNgn }: { account: S
       </div>
       {rejected && <p className="text-sm px-3 py-2.5 rounded-xl" style={{ background: 'rgba(186,43,76,0.08)', color: 'var(--danger)' }}>Last receipt wasn't accepted: “{rejected.adminNote}”</p>}
       <div className="grid grid-cols-2 gap-2">
-        <label className="text-xs" style={{ color: 'var(--muted)' }}>Amount paid (₦)
-          <input value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" className="mt-1 w-full h-11 px-3 rounded-xl text-sm outline-none tabular-nums" style={{ ...card, color: 'var(--ink)' }} />
-        </label>
+        <div className="text-xs" style={{ color: 'var(--muted)' }}>Amount paid
+          <p className="mt-1 h-11 px-3 rounded-xl text-sm flex items-center font-semibold tabular-nums" style={{ ...card, color: 'var(--ink)' }}>{fmtNgn(expectedNgn)}</p>
+        </div>
         <label className="text-xs" style={{ color: 'var(--muted)' }}>Date paid
           <input type="date" value={paidOn} max={lagosToday()} onChange={e => setPaidOn(e.target.value)} className="mt-1 w-full h-11 px-3 rounded-xl text-sm outline-none" style={{ ...card, color: 'var(--ink)' }} />
         </label>
       </div>
-      <p className="text-[11px] -mt-2" style={{ color: 'var(--subtle)' }}>Rent + caution fee for this home: {fmtNgn(expectedNgn)}</p>
+      <p className="text-[11px] -mt-2" style={{ color: 'var(--subtle)' }}>The first payment is always in full: a year's rent plus the refundable caution fee.</p>
       <label className="flex flex-col items-center justify-center gap-1.5 py-5 rounded-2xl border-2 border-dashed cursor-pointer" style={{ borderColor: 'var(--border)', background: 'var(--surface-muted)' }}>
         <Upload className="w-5 h-5" style={{ color: 'var(--accent)' }} />
         <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Photo of the receipt</span>

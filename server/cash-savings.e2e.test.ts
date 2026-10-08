@@ -124,6 +124,9 @@ describe('cash payments', () => {
   });
   test('the receipt must have an amount, a real date and a photo', async () => {
     expect((await sendReceipt(TENANT, { inspectionId: String(insp), amountNgn: '0', paidOn: today() })).body.code).toBe('amount');
+    const part = await sendReceipt(TENANT, { inspectionId: String(insp), amountNgn: '400000', paidOn: today() });
+    expect(part.body.code).toBe('not_full'); // first payment must be rent + caution in full
+    expect(part.body.error).toContain('₦820,000');
     expect((await sendReceipt(TENANT, { inspectionId: String(insp), amountNgn: '820000', paidOn: '2099-01-01' })).body.code).toBe('paid_on');
     expect((await sendReceipt(TENANT, { inspectionId: String(insp), amountNgn: '820000', paidOn: today() }, [])).body.code).toBe('no_files');
   });
@@ -165,7 +168,7 @@ describe('cash payments', () => {
     const { db } = await import('./db');
     const id = (db().query('SELECT id FROM inspections WHERE tenant = ? ORDER BY id DESC').get(TENANT2.address.toLowerCase()) as { id: number }).id;
     await call(LANDLORD, `/api/inspections/${id}/payment`, { method: 'cash' });
-    const p = (await sendReceipt(TENANT2, { inspectionId: String(id), amountNgn: '400000', paidOn: today() })).body.payment.id;
+    const p = (await sendReceipt(TENANT2, { inspectionId: String(id), amountNgn: '820000', paidOn: today() })).body.payment.id;
     expect((await call(LANDLORD, `/api/cash-payments/${p}/answer`, { received: false })).body.code).toBe('note');
     const d = await call(LANDLORD, `/api/cash-payments/${p}/answer`, { received: false, note: 'I only got ₦300,000' });
     expect(d.body.payment.status).toBe('disputed');
@@ -174,7 +177,7 @@ describe('cash payments', () => {
     expect((await call(OWNER, `/api/cash-payments/${p}/receipt/0`)).status).toBe(200); // the admin can see the receipt
     expect((await call(OWNER, `/api/cash-payments/${p}/resolve`, { paid: false })).body.code).toBe('note');
     sent.length = 0;
-    const r = await call(OWNER, `/api/cash-payments/${p}/resolve`, { paid: false, note: 'The receipt shows ₦300,000, not ₦400,000.' });
+    const r = await call(OWNER, `/api/cash-payments/${p}/resolve`, { paid: false, note: 'The receipt shows ₦300,000, not ₦820,000.' });
     expect(r.body.payment).toMatchObject({ status: 'rejected', adminNote: expect.stringContaining('₦300,000') });
     expect(sent.map(s => s.phone).sort()).toEqual(['2347012345678', '2348031234567']); // both told
   });
