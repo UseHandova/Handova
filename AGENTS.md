@@ -6,6 +6,7 @@
 |---|---|
 | RentFlowEscrow | `0x29993a0e1BF9ef863c10Bfc7171c410DCE9Fe7Ca` |
 | RentFlowNFT | `0x78A84547a4372950b4898DE06c008D83F18D445F` |
+| RentSavingsVault | `0x319c6Da874F81379E2ADa1FE3c539816813B8dCA` (deployed 2026-10-08, `contracts/script/DeploySavingsVault.s.sol`) |
 
 USDC (Arc Testnet): `0x3600000000000000000000000000000000000000`
 Deployed 2026-10-06 with `contracts/script/DeployHandova.s.sol` (NFT already linked). Owner/deployer keystore: `rentflow-deployer` (password in `~/.rentflow-deployer-password`). Verifier (KYC backend key): `0x6380197079a664E358842Bb21d34775B431762cD`.
@@ -41,7 +42,7 @@ Sign-in uses passkeys (Circle Modular Wallets), or a phone number proven over Wh
 - `src/lib/` - chain state (`chain.ts`), API sessions (`api.ts`), inspections, chat, ownership, phone wallets
 - `src/config.ts` - wagmi config (chains, connectors, transports)
 - `server/whatsapp-bot.ts` - API server entry: WhatsApp bot + mounts every module below
-- `server/` - `auth.ts` (signed sessions), `inspections.ts`, `chat.ts`, `phone-auth.ts`, `ownership.ts`, `features.ts` (reviews, repairs, boosts, referrals, moderation), `verification.ts` (Didit/Dojah), `media.ts`, `db.ts` (SQLite)
+- `server/` - `auth.ts` (signed sessions), `inspections.ts`, `chat.ts`, `phone-auth.ts`, `ownership.ts`, `cash.ts` (cash payments + receipts), `savings.ts` (savings plans + reminders), `admin.ts`, `backup.ts`, `features.ts` (reviews, repairs, boosts, referrals, moderation), `verification.ts` (Didit/Dojah), `media.ts`, `db.ts` (SQLite)
 
 ## Tests
 
