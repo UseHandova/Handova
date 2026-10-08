@@ -134,7 +134,8 @@ export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHAT
       const smsCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
       db().query("INSERT INTO phone_challenges (id, phone, code, status, created_at, expires_at, channel, code_hash) VALUES (?, ?, ?, 'pending', ?, ?, 'sms', ?)")
         .run(smsId, phone, `sms-${smsId}`, now, now + CODE_TTL_MS, serverHmac(`sms:${smsId}:${smsCode}`));
-      const out = await sms!(phone, `Your Handova code is ${smsCode}. It expires in 10 minutes. Never share it — Handova will never ask you for it.`);
+      // Plain GSM characters only (no dashes or emoji), so it stays one 160-character SMS.
+      const out = await sms!(phone, `Your Handova code is ${smsCode}. It expires in 10 minutes. Never share it. Handova will never ask you for it.`);
       if (!out.ok) {
         db().query('DELETE FROM phone_challenges WHERE id = ?').run(smsId);
         return bad(res, 502, 'We couldn\'t send the SMS just now. Try again in a minute, or use WhatsApp instead.', 'sms_failed');

@@ -172,6 +172,8 @@ describe('SMS codes, for numbers not on WhatsApp', () => {
     expect(texts[0].phone).toBe(SMS_E164);
     expect(texts[0].text).toMatch(/Your Handova code is \d{6}/);
     expect(texts[0].text).toContain('Never share it');
+    expect(/^[A-Za-z0-9 .,]+$/.test(texts[0].text)).toBe(true); // plain SMS alphabet: one SMS, not Unicode
+    expect(texts[0].text.length).toBeLessThanOrEqual(160);
   });
   test('only a hash of the code is stored', () => {
     const row = db().query("SELECT code, code_hash FROM phone_challenges WHERE phone = ? AND channel = 'sms'").get(SMS_E164) as { code: string; code_hash: string };
