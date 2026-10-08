@@ -16,7 +16,8 @@ import {
   CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, MessagesSquare, ShieldCheck, X, XCircle, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatNaira, formatUsdc } from '@/lib/naira';
+import { formatNaira, formatUsdc, USDC_TO_NGN } from '@/lib/naira';
+import { TenantCashPay } from '@/components/CashPayment';
 import { parseAmount } from '@/onchain-money';
 import { ERC20_APPROVE_ABI, ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
 import { useNow, useRefreshChain } from '@/lib/chain';
@@ -352,8 +353,17 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                   <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>Didn't like the place? Just close this — you don't have to rent it.</p>
                 </>))}
 
-                {/* 4 — Review & pay */}
-                {screen === 'pay' && (<>
+                {/* 4 — Pay in cash (the landlord chose cash for this tenant) */}
+                {screen === 'pay' && current?.paymentMethod === 'cash' && (<>
+                  <div>
+                    <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Pay the landlord in cash</h3>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Then upload the receipt. The landlord confirms it in the app, and you both keep the record.</p>
+                  </div>
+                  <TenantCashPay account={account} inspection={current} expectedNgn={(listing.rentUsdc + listing.depositUsdc) * USDC_TO_NGN} />
+                </>)}
+
+                {/* 4 — Review & pay into escrow */}
+                {screen === 'pay' && current?.paymentMethod !== 'cash' && (<>
                   <div>
                     <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Review and pay</h3>
                     <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Your money goes into escrow, not to the landlord. They're paid only after you confirm you've moved in.</p>

@@ -20,6 +20,8 @@ const ROWS: [string, string, string, string][] = [
   ['Chat messages', 'Talking to the landlord or tenant. Only the two of you can read a chat; Handova staff can\'t open chats. If you haven\'t read a message, we may send you a WhatsApp nudge with its first 200 characters', 'Our server', 'Kept while the conversation exists'],
   ['Property ownership documents', 'Checking a landlord may let the property. Shown only to the landlord and the Handova admin', 'Our server, encrypted', 'Deleted as soon as they\'re reviewed. We keep a fingerprint of each file and the decision'],
   ['Reviews and repair requests', 'Helping tenants choose and landlords fix problems', 'Our server. Reviews are public', 'Kept with the tenancy'],
+  ['Cash payment receipts: amount, date, photo of the receipt, notes', 'Proof that a cash rent payment happened, confirmed by the landlord. If they disagree, the Handova admin looks at the receipt', 'Our server, encrypted', 'Kept as your proof of payment'],
+  ['Rent savings plan: goal, due date, how often, reminder number', 'Working out how much to save and reminding you. The money itself sits in a savings contract that only you can move', 'Plan on our server; savings on the blockchain (public)', 'Plan: until you stop it. Savings: until you withdraw them'],
   ['Payments: rent and caution fee in USDC', 'Holding money safely until move-in and move-out', 'Arc blockchain (public)', 'Permanent'],
   ['Language, theme, saved searches, your booking contact details', 'Remembering your preferences', 'Your browser only', 'Until you clear your browser data'],
 ];

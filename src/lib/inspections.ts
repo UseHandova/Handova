@@ -27,6 +27,8 @@ export interface Inspection {
   landlordConfirmedAt: number | null;
   missedBy: 'tenant' | 'landlord' | null;
   canPay: boolean;
+  /** How the landlord wants the first payment. */
+  paymentMethod: 'escrow' | 'cash';
   createdAt: number;
   updatedAt: number;
   notified?: boolean;

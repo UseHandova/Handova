@@ -10,6 +10,7 @@ import { api, publicApi } from '@/lib/api';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { Loader2, FileCheck2 } from 'lucide-react';
 import { OwnershipReview } from '@/components/OwnershipProof';
+import { AdminCashDisputes } from '@/components/CashPayment';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, Users, Building2, ShieldCheck, AlertTriangle,
@@ -280,8 +281,11 @@ export default function AdminDashboard({ address, account, onClose }: Props) {
 
               {tab === 'disputes' && (
                 <motion.div key="disputes" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} className="space-y-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Cash payments in dispute</h3>
+                  <AdminCashDisputes account={account} />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider pt-3" style={{ color: 'var(--muted)' }}>Escrow disputes</h3>
                   {disputes.length === 0 && (
-                    <p className="text-sm text-center py-10" style={{ color: 'var(--muted)' }}>No open disputes onchain.</p>
+                    <p className="text-sm py-4" style={{ color: 'var(--muted)' }}>No open disputes onchain.</p>
                   )}
                   {disputes.map(d => {
                     const btn = (share: number, label: string, style: React.CSSProperties) => (

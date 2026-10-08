@@ -5,11 +5,14 @@
 
 import { useMemo, useState } from 'react';
 import { TenantVisits } from '@/components/InspectionRequests';
+import { TenantCashRecords } from '@/components/CashPayment';
+import RentSavings, { type SavingsSuggestion } from '@/components/RentSavings';
+import { useCashPayments } from '@/lib/cash';
 import { navigate } from '@/lib/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Clock, Download, FileText, Loader2, ShieldCheck, Star, Wrench } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { formatNaira } from '@/lib/naira';
+import { formatNaira, USDC_TO_NGN } from '@/lib/naira';
 import { EscrowStatus, ESCROW_STATUS_LABEL } from '@/lib/contracts';
 import {
   canDispute, formatCountdown, sameAddress, sendEscrowTx, useChainState, useNow, useRefreshChain,
@@ -62,6 +65,8 @@ export default function MyLeases({ account, address }: Props) {
   const now = useNow();
   const u = useUi();
 
+  const cash = useCashPayments(account).payments;
+
   // This tenant's escrows, newest first.
   const escrows = useMemo(() => (chain.data?.escrows ?? [])
     .filter(e => sameAddress(e.tenant, address))
@@ -99,6 +104,18 @@ export default function MyLeases({ account, address }: Props) {
     }
   }
 
+  // What to save for: next year's rent for the home they live in now (escrow tenancy or confirmed cash payment).
+  const savingsSuggestion = useMemo((): SavingsSuggestion | undefined => {
+    const live = escrows.find(e => e.status === EscrowStatus.Active);
+    if (live?.listing) return { goalNgn: live.listing.rentUsdc * USDC_TO_NGN, dueAt: live.createdAt + 365 * 86_400_000, label: `${live.location} rent` };
+    const paid = cash.find(p => p.role === 'tenant' && p.status === 'confirmed' && p.coversUntil > now);
+    if (paid) {
+      const l = chain.data?.listings.find(x => String(x.id) === paid.listingId);
+      return { goalNgn: l ? l.rentUsdc * USDC_TO_NGN : paid.amountNgn, dueAt: paid.coversUntil, label: `${paid.place} rent` };
+    }
+    return undefined;
+  }, [escrows, cash, chain.data, now]);
+
   if (chain.isLoading || (chain.isError && !chain.data)) {
     return (
       <div className="flex justify-center py-24">
@@ -117,8 +134,10 @@ export default function MyLeases({ account, address }: Props) {
       </p>
 
       <TenantVisits account={account} onOpen={id => navigate(`/tenant?visit=${id}`)} />
+      <TenantCashRecords account={account} />
+      <RentSavings account={account} suggestion={savingsSuggestion} />
 
-      {escrows.length === 0 ? (
+      {escrows.length === 0 && !cash.some(p => p.role === 'tenant' && p.status !== 'rejected') ? (
         <div className="rounded-2xl p-10 flex flex-col items-center text-center" style={{ border: '1px dashed var(--border-strong)' }}>
           <FileText className="w-8 h-8 mb-3" style={{ color: 'var(--subtle)' }} />
           <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('no_leases')}</p>

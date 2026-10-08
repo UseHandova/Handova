@@ -197,7 +197,7 @@ export function useRefreshChain() {
 }
 
 type EscrowWrite =
-  | { functionName: 'markHandover' | 'claimMoveIn' | 'approveDepositReturn' | 'claimDeposit' | 'dispute' | 'confirmMoveIn' | 'endTenancy'; args: [bigint] }
+  | { functionName: 'markHandover' | 'claimMoveIn' | 'approveDepositReturn' | 'claimDeposit' | 'dispute' | 'confirmMoveIn' | 'endTenancy' | 'deactivateListing'; args: [bigint] }
   | { functionName: 'resolveDispute'; args: [bigint, number] }
   | { functionName: 'withdraw'; args?: [] };
 

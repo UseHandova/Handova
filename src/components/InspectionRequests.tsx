@@ -8,9 +8,11 @@ import { useState } from 'react';
 import { CalendarCheck, CheckCircle2, Clock, Loader2, MessageCircle, MessagesSquare, Phone, XCircle } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { toast } from 'sonner';
-import { useNow } from '@/lib/chain';
+import { useChainState, useNow } from '@/lib/chain';
 import { openChat } from '@/lib/chat';
+import { useCashPayments } from '@/lib/cash';
 import SlotPicker from '@/components/SlotPicker';
+import { PaymentMethodPicker } from '@/components/CashPayment';
 import { OUTCOME_OPENS_MS, formatSlot, prettyPhone, useInspections, waLink, type Inspection } from '@/lib/inspections';
 
 const DECLINE_REASONS = ['That time doesn\'t work', 'The property is already taken', 'I\'m travelling — please pick another week'];
@@ -19,6 +21,9 @@ export default function InspectionRequests({ account }: { account: SmartAccount 
   const ins = useInspections(account);
   const now = useNow();
   const mine = ins.inspections.filter(i => i.role === 'landlord');
+  // Inspections whose tenant already sent a cash receipt: the payment method is locked.
+  const cashPayments = useCashPayments(account).payments;
+  const cashSent = new Set(cashPayments.filter(p => p.role === 'landlord' && p.status !== 'rejected').map(p => p.inspectionId));
   const groups: { title: string; items: Inspection[] }[] = [
     { title: 'Needs your reply', items: mine.filter(i => i.status === 'requested') },
     { title: 'Did the visit happen?', items: mine.filter(i => i.status === 'approved' && now >= i.slotAt - OUTCOME_OPENS_MS && !i.landlordConfirmedAt) },
@@ -50,7 +55,7 @@ export default function InspectionRequests({ account }: { account: SmartAccount 
       {groups.map(g => (
         <div key={g.title}>
           <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--muted)' }}>{g.title} · {g.items.length}</h3>
-          <ul className="space-y-2">{g.items.map(i => <Item key={i.id} i={i} ins={ins} />)}</ul>
+          <ul className="space-y-2">{g.items.map(i => <Item key={i.id} i={i} ins={ins} cashSent={cashSent.has(i.id)} />)}</ul>
         </div>
       ))}
     </section>
@@ -61,7 +66,7 @@ function Spin({ on }: { on: boolean }) {
   return on ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null;
 }
 
-function Item({ i, ins }: { i: Inspection; ins: ReturnType<typeof useInspections> }) {
+function Item({ i, ins, cashSent }: { i: Inspection; ins: ReturnType<typeof useInspections>; cashSent: boolean }) {
   const [mode, setMode] = useState<'idle' | 'propose' | 'decline'>('idle');
   const [slot, setSlot] = useState<number | null>(null);
   const [note, setNote] = useState('');
@@ -96,7 +101,7 @@ function Item({ i, ins }: { i: Inspection; ins: ReturnType<typeof useInspections
           {i.note && <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>"{i.note}"</p>}
           {i.status === 'rescheduled' && <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>You suggested this time. Waiting for {i.tenantName.split(' ')[0]} to accept.</p>}
           {i.status === 'approved' && i.landlordConfirmedAt && !i.tenantConfirmedAt && <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>You confirmed the visit. Waiting for the tenant.</p>}
-          {i.status === 'completed' && <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--accent)' }}><CheckCircle2 className="w-3 h-3" /> Both confirmed. If they rent it, you'll be notified when rent is in escrow.</p>}
+          {i.status === 'completed' && <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--accent)' }}><CheckCircle2 className="w-3 h-3" /> Both confirmed. {i.paymentMethod === 'cash' ? 'They\'ll pay you in cash and upload the receipt for you to confirm.' : 'If they rent it, you\'ll be notified when rent is in escrow.'}</p>}
         </div>
         <div className="flex gap-1.5 shrink-0">
           <button onClick={() => openChat({ listingId: i.listingId, tenant: i.tenant })} aria-label={`Chat with ${i.tenantName} in Handova`} title="Chat in Handova"
@@ -158,6 +163,14 @@ function Item({ i, ins }: { i: Inspection; ins: ReturnType<typeof useInspections
         </div>
       )}
 
+      {/* How this tenant pays: escrow (default) or cash */}
+      {cashSent && <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>Paying in cash. Their receipt is below in "Confirm cash payments".</p>}
+      {(i.status === 'approved' || i.status === 'completed') && mode === 'idle' && !cashSent && (
+        <PaymentMethodPicker i={i} busy={!!busy} onChange={m => { void act('payment', { method: m }, r => (r.paymentMethod === 'cash'
+          ? `${i.tenantName.split(' ')[0]} will pay you in cash and upload the receipt for you to confirm.`
+          : `${i.tenantName.split(' ')[0]} will pay through escrow.`) + told(r)); }} />
+      )}
+
       {/* After the visit */}
       {i.status === 'approved' && now >= i.slotAt - OUTCOME_OPENS_MS && !i.landlordConfirmedAt && mode === 'idle' && (
         <div className="grid grid-cols-2 gap-2">
@@ -173,11 +186,19 @@ function Item({ i, ins }: { i: Inspection; ins: ReturnType<typeof useInspections
 /** Tenant's visits in progress, shown on My Leases so they can find them again. */
 export function TenantVisits({ account, onOpen }: { account: SmartAccount; onOpen: (listingId: string) => void }) {
   const ins = useInspections(account);
+  const cash = useCashPayments(account).payments;
+  const chain = useChainState();
   const now = useNow();
-  const list = ins.inspections.filter(i => i.role === 'tenant' && (['requested', 'rescheduled', 'approved'].includes(i.status) || i.canPay));
+  const cashFor = (i: Inspection) => cash.find(p => p.inspectionId === i.id && p.status !== 'rejected');
+  // Already paid: an escrow from this tenant for that listing, or a cash payment the landlord confirmed.
+  const paid = (i: Inspection) => cashFor(i)?.status === 'confirmed'
+    || (chain.data?.escrows ?? []).some(e => String(e.listingId) === i.listingId && e.tenant.toLowerCase() === account.address.toLowerCase());
+  const list = ins.inspections.filter(i => i.role === 'tenant' && (['requested', 'rescheduled', 'approved'].includes(i.status) || i.canPay) && !paid(i));
   if (!list.length) return null;
   const label = (i: Inspection) =>
-    i.canPay ? { text: 'Inspected — ready to pay', color: 'var(--accent)' }
+    cashFor(i)?.status === 'awaiting_landlord' ? { text: 'Cash receipt sent — waiting for the landlord', color: 'var(--muted)' }
+    : cashFor(i)?.status === 'disputed' ? { text: 'Cash payment under review', color: '#d4a017' }
+    : i.canPay ? { text: i.paymentMethod === 'cash' ? 'Inspected — pay the landlord in cash' : 'Inspected — ready to pay', color: 'var(--accent)' }
     : i.status === 'requested' ? { text: 'Waiting for landlord', color: 'var(--muted)' }
     : i.status === 'rescheduled' ? { text: 'New time suggested — reply needed', color: '#d4a017' }
     : now >= i.slotAt - OUTCOME_OPENS_MS ? { text: i.tenantConfirmedAt ? 'Waiting for landlord to confirm' : 'Did the visit happen? Tell us', color: i.tenantConfirmedAt ? 'var(--muted)' : '#d4a017' }

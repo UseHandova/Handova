@@ -20,6 +20,7 @@ import InspectionFlow from '@/components/InspectionFlow';
 import { formatSlot, inspectionFor, useInspections } from '@/lib/inspections';
 import { openChat } from '@/lib/chat';
 import { useOwnershipVerified } from '@/lib/ownership';
+import { useRentedForCash } from '@/lib/cash';
 import ShareListing from '@/components/ShareListing';
 import SavedSearches from '@/components/SavedSearches';
 import TenantReviews from '@/components/TenantReviews';
@@ -161,6 +162,7 @@ export default function BrowseListings({ account }: Props) {
   const boostsData = useBoosts().data;
   const boosted = useMemo(() => new Set((boostsData?.boosts ?? []).map(b => b.listingId)), [boostsData]);
   const ownershipAt = useOwnershipVerified();
+  const rentedForCash = useRentedForCash();
   const visits = useInspections(account).inspections;
   const visitLabel = (l: Listing) => {
     const v = inspectionFor(visits, l.id);
@@ -175,12 +177,12 @@ export default function BrowseListings({ account }: Props) {
   // Live listings that aren't rented yet; samples only until the first real listing exists.
   const listings = useMemo(() => {
     const live = (chain.data?.listings ?? [])
-      .filter(l => l.active && l.escrowId === 0n && !hidden?.has(String(l.id)))
+      .filter(l => l.active && l.escrowId === 0n && !hidden?.has(String(l.id)) && !rentedForCash.has(String(l.id)))
       .map(l => ({ ...fromChain(l), ownershipCheckedAt: ownershipAt(l.landlord, l.meta.address) })).reverse()
       // Boosted (paid, verified) listings first; otherwise newest first.
       .sort((a, b) => Number(boosted.has(String(b.id))) - Number(boosted.has(String(a.id))));
     return live.length > 0 || !chain.isSuccess ? live : SAMPLE_LISTINGS;
-  }, [chain.data, chain.isSuccess, hidden, boosted, ownershipAt]);
+  }, [chain.data, chain.isSuccess, hidden, boosted, ownershipAt, rentedForCash]);
 
   // ?visit=<listingId> (from WhatsApp updates and My Leases) opens that home's inspection straight away.
   const visitParam = new URLSearchParams(window.location.search).get('visit');

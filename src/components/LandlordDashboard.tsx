@@ -28,6 +28,7 @@ import { geocodeAddress, PinDropMap } from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import InspectionRequests from '@/components/InspectionRequests';
 import { OwnershipRow } from '@/components/OwnershipProof';
+import { LandlordCashPayments } from '@/components/CashPayment';
 import { useMyOwnership } from '@/lib/ownership';
 import { clearReturnParams, diditSessionFromUrl } from '@/lib/url';
 import { usePath } from '@/lib/router';
@@ -989,6 +990,7 @@ export default function LandlordDashboard({ account }: Props) {
 
       {/* Inspection requests from tenants */}
       <InspectionRequests account={account} />
+      <LandlordCashPayments account={account} />
 
       {/* Needs your attention */}
       {attention.length > 0 && (

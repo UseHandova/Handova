@@ -10,6 +10,7 @@ import { Bell, X, CheckCircle2, Key, ShieldCheck, Zap, AlertTriangle, Wallet, Cl
 import { useQueryClient } from '@tanstack/react-query';
 import { useLang } from '@/lib/LangContext';
 import { OUTCOME_OPENS_MS, formatSlot, type Inspection } from '@/lib/inspections';
+import { cashKey, type CashPayment } from '@/lib/cash';
 import { EscrowStatus } from '@/lib/contracts';
 import { formatNaira } from '@/lib/naira';
 import {
@@ -123,6 +124,17 @@ function useCachedData<T>(key: readonly unknown[]): T | undefined {
   return useSyncExternalStore(subscribe, () => qc.getQueryData<T>(key));
 }
 
+/** Cash payment updates (from the cached /api/cash-payments list). */
+function cashNotice(p: CashPayment): Notification | null {
+  const id = (s: string) => `c-${p.id}-${s}`;
+  const amt = `₦${p.amountNgn.toLocaleString('en-NG')}`;
+  if (p.role === 'landlord' && p.status === 'awaiting_landlord') return { id: id('ask'), type: 'money', title: 'Confirm a cash payment', body: `${p.tenantName} says they paid you ${amt} in cash for ${p.place}. Check the receipt and confirm on your dashboard.`, createdAt: p.createdAt };
+  if (p.role === 'tenant' && p.status === 'confirmed') return { id: id('ok'), type: 'done', title: 'Cash payment confirmed', body: `The landlord confirmed your ${amt} payment for ${p.place}. Your record is in My Leases.`, createdAt: p.resolvedAt ?? p.landlordAnsweredAt ?? p.createdAt };
+  if (p.role === 'tenant' && p.status === 'disputed') return { id: id('dispute'), type: 'dispute', title: 'Landlord disputes your cash payment', body: `They said: "${p.landlordNote}". The Handova team is reviewing your receipt.`, createdAt: p.landlordAnsweredAt ?? p.createdAt };
+  if (p.status === 'rejected') return { id: id('rejected'), type: 'dispute', title: 'Cash payment not confirmed', body: `Handova reviewed the ${amt} payment for ${p.place}: "${p.adminNote}"`, createdAt: p.resolvedAt ?? p.createdAt };
+  return null;
+}
+
 function timeAgo(ts: number, now: number): string {
   const m = Math.floor((now - ts) / 60000);
   if (m < 1) return 'just now';
@@ -142,6 +154,7 @@ export default function NotificationCenter({ address }: { address: string }) {
   const now = useNow();
   // Read-only view of the inspections cache; whichever screen signed in keeps it fresh.
   const visits = useCachedData<Inspection[]>(['inspections', address.toLowerCase()]);
+  const cashPayments = useCachedData<CashPayment[]>(cashKey(address));
 
   const notifs = useMemo(() => {
     const list: Notification[] = [];
@@ -152,11 +165,12 @@ export default function NotificationCenter({ address }: { address: string }) {
       if (n) list.push(n);
     }
     for (const i of visits ?? []) { const n = inspectionNotice(i, now); if (n) list.push(n); }
+    for (const p of cashPayments ?? []) { const n = cashNotice(p); if (n) list.push(n); }
     if (pending > 0) {
       list.push({ id: `money-${pending}`, type: 'money', title: 'Money to withdraw', body: `You have ${formatNaira(pending)} ready. Tap Withdraw at the top to move it to your wallet.`, createdAt: now });
     }
     return list.filter(n => !hidden.has(n.id)).sort((a, b) => b.createdAt - a.createdAt);
-  }, [chain.data, address, pending, hidden, now, visits]);
+  }, [chain.data, address, pending, hidden, now, visits, cashPayments]);
 
   const unread = notifs.filter(n => !seen.has(n.id)).length;
 
@@ -178,6 +192,7 @@ export default function NotificationCenter({ address }: { address: string }) {
       <motion.button
         whileTap={{ scale: 0.92 }}
         onClick={() => setOpen(o => !o)}
+        aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
         className="relative w-10 h-10 rounded-2xl flex items-center justify-center"
         style={{ background: open ? 'var(--accent-soft)' : 'var(--surface-strong)', border: '1px solid var(--border)' }}
       >
