@@ -13,6 +13,7 @@ import type { Hex } from 'viem';
 process.env.RENTFLOW_DB = ':memory:';
 process.env.SESSION_SECRET = 'test-session-secret';
 process.env.TWILIO_SANDBOX_JOIN = 'join gun-heart';
+delete process.env.SMS_PROVIDER; // these tests pick the providers explicitly
 
 const { mountPhoneAuth, handleInboundLogin } = await import('./phone-auth');
 const { lockKey, openKey, pinProofFor, weakPin } = await import('../src/lib/phone-wallet');
@@ -40,14 +41,14 @@ async function verify(from = E164) {
 beforeAll(async () => {
   const app = express();
   app.use(express.json());
-  mountPhoneAuth(app, 'whatsapp:+14155238886', async (phone, text) => { if (smsFails) return { ok: false, error: 'down' }; texts.push({ phone, text }); return { ok: true }; });
+  mountPhoneAuth(app, 'whatsapp:+14155238886', async (phone, text) => { if (smsFails) return { ok: false, error: 'down' }; texts.push({ phone, text }); return { ok: true }; }, null);
   await new Promise<void>(r => { server = app.listen(0, () => r()); });
   const addr = server.address();
   base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
   // A second server with no SMS provider configured.
   const app2 = express();
   app2.use(express.json());
-  mountPhoneAuth(app2, 'whatsapp:+14155238886', null);
+  mountPhoneAuth(app2, 'whatsapp:+14155238886', null, null);
   noSmsServer = await new Promise<Server>(r => { const sv = app2.listen(0, () => r(sv)); });
   const a2 = noSmsServer.address();
   noSmsBase = `http://127.0.0.1:${typeof a2 === 'object' && a2 ? a2.port : 0}`;

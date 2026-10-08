@@ -5,8 +5,12 @@
  *    - WhatsApp (default, free): a "reverse OTP". The app opens WhatsApp with "HANDOVA LOGIN 482913" pre-typed and
  *      the person sends it to our bot. A message *from* their number proves they own it; user-started chats need
  *      no message templates.
- *    - SMS (for numbers not on WhatsApp): we text a 6-digit code (Termii, see server/sms.ts) and they type it in.
- *      Only a keyed hash of the code is stored; 5 wrong tries end that code.
+ *    - SMS (for numbers not on WhatsApp), one of:
+ *        firebase — the browser runs Firebase Phone Auth (Google sends the code; no Nigerian sender ID / CAC
+ *                   needed) and we verify the resulting ID token (server/firebase-phone.ts);
+ *        termii   — we text our own 6-digit code (server/sms.ts); only a keyed hash is stored, 5 wrong tries end it;
+ *        dev      — like termii, but the code is printed in the server log (development only).
+ *      SMS_PROVIDER picks one; by default Firebase if configured, else Termii, else dev.
  * 2. The wallet key is made on the person's device and locked with their 6-digit PIN. We keep a locked backup
  *    so a new phone can sign in. Unlocking needs all three: the phone number (step 1), the PIN (every 5 wrong
  *    tries → a lock: 15 minutes the first time, then 24 hours), and a per-account server share. The server alone
@@ -24,6 +28,8 @@ import { db } from './db';
 import { serverHmac } from './auth';
 import { normalisePhone } from './inspections';
 import { smsFromEnv, type SmsSender } from './sms';
+import { FirebaseTokenError, verifyFirebasePhoneToken } from './firebase-phone';
+import type { JWTVerifyGetKey } from 'jose';
 
 export const CODE_TTL_MS = 10 * 60_000;
 const TOKEN_TTL_MS = 15 * 60_000;
@@ -109,11 +115,38 @@ export function handleInboundLogin(fromRaw: string, body: string): string | null
   return '✅ Number confirmed! Go back to Handova to finish signing in.';
 }
 
-export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHATSAPP_NUMBER || '', sms: SmsSender | null = smsFromEnv()) {
+export interface FirebaseConfig { projectId: string; keys?: JWTVerifyGetKey }
+export function firebaseFromEnv(env = process.env): FirebaseConfig | null {
+  const projectId = env.FIREBASE_PROJECT_ID || env.VITE_FIREBASE_PROJECT_ID || '';
+  return projectId ? { projectId } : null;
+}
+
+export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHATSAPP_NUMBER || '', sms: SmsSender | null = smsFromEnv(), firebase: FirebaseConfig | null = firebaseFromEnv()) {
   ensurePhoneTables();
   const bad = (res: Response, status: number, error: string, code = 'bad_request') => res.status(status).json({ ok: false, code, error });
   const botDigits = botNumber.replace(/\D/g, '');
   const sandboxJoin = process.env.TWILIO_SANDBOX_JOIN || ''; // e.g. "join gun-heart" while on the Twilio sandbox
+  const wanted = process.env.SMS_PROVIDER;
+  const smsMode: 'firebase' | 'termii' | 'dev' | null =
+    wanted === 'firebase' ? (firebase ? 'firebase' : null)
+    : wanted === 'termii' ? (sms && !sms.devMode ? 'termii' : null)
+    : firebase ? 'firebase' : sms ? (sms.devMode ? 'dev' : 'termii') : null;
+
+  /** Which ways of proving a number this server offers (the app shows only those). */
+  app.get('/api/phone/options', (_req: Request, res: Response) => {
+    res.json({ ok: true, whatsapp: !!botDigits, sms: smsMode, sandboxJoin });
+  });
+
+  /** Firebase route: the browser did the SMS step with Google; verify its ID token and take the number from it. */
+  app.post('/api/phone/firebase', async (req: Request, res: Response) => {
+    if (smsMode !== 'firebase' || !firebase) return bad(res, 409, 'SMS sign-in on this server doesn\'t use Firebase.', 'not_firebase');
+    try {
+      const phone = await verifyFirebasePhoneToken(String(req.body?.idToken ?? ''), firebase.projectId, firebase.keys);
+      res.json(verifiedPayload(phone));
+    } catch (e) {
+      bad(res, 401, e instanceof FirebaseTokenError ? e.message : 'That sign-in couldn\'t be verified. Please try again.', 'bad_token');
+    }
+  });
 
   /** Start: returns the code to send and a wa.me link with it pre-typed. */
   app.post('/api/phone/start', async (req: Request, res: Response) => {
@@ -121,7 +154,8 @@ export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHAT
     if (!phone) return bad(res, 400, 'Enter your phone number, e.g. 0803 123 4567.', 'phone');
     const channel = req.body?.channel === 'sms' ? 'sms' : 'whatsapp';
     if (channel === 'whatsapp' && !botDigits) return bad(res, 503, 'WhatsApp sign-in isn\'t set up on this server yet. Get a code by SMS instead.', 'unavailable');
-    if (channel === 'sms' && !sms) return bad(res, 503, 'SMS codes aren\'t set up on this server yet. Use WhatsApp instead.', 'sms_unavailable');
+    if (channel === 'sms' && smsMode === 'firebase') return bad(res, 409, 'SMS codes on this server come from Firebase — the app sends them directly.', 'use_firebase');
+    if (channel === 'sms' && (!sms || !smsMode)) return bad(res, 503, 'SMS codes aren\'t set up on this server yet. Use WhatsApp instead.', 'sms_unavailable');
     const now = Date.now();
     const recent = (db().query('SELECT COUNT(*) AS n FROM phone_challenges WHERE phone = ? AND created_at > ?').get(phone, now - 3600_000) as { n: number }).n;
     if (recent >= START_LIMIT) return bad(res, 429, 'Too many attempts for this number. Please wait an hour and try again.', 'rate_limited');
