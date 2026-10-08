@@ -21,6 +21,11 @@ async function auth() {
   const app = getApps()[0] ?? initializeApp(config);
   const a = getAuth(app);
   a.languageCode = 'en';
+  // Development only: automated tests can skip the reCAPTCHA check. Firebase allows this only for the fictional
+  // "phone numbers for testing", and this branch is stripped from production builds.
+  if (import.meta.env.DEV) {
+    try { if (localStorage.getItem('handova-firebase-test') === '1') a.settings.appVerificationDisabledForTesting = true; } catch { /* storage unavailable */ }
+  }
   return a;
 }
 

@@ -61,6 +61,7 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyWith, setBusyWith] = useState<'whatsapp' | 'sms' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Which ways of proving a number this server offers (WhatsApp, and SMS via Firebase / Termii / test mode).
@@ -87,7 +88,7 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
   }, [step, start]);
 
   async function begin(channel: 'whatsapp' | 'sms' = 'whatsapp') {
-    setBusy(true); setError(null);
+    setBusy(true); setBusyWith(channel); setError(null);
     try {
       if (channel === 'sms' && smsMode === 'firebase') {
         // Google sends the code; we only see the proof afterwards.
@@ -102,7 +103,7 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
       const s = await post<Start>('/api/phone/start', { phone, channel });
       setStart(s); setStatus('pending'); setCode(''); setClock(Date.now());
       setStep(s.channel === 'sms' ? 'sms' : 'confirm');
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); setBusyWith(null); }
   }
 
   // Tick once a second while an SMS code is waiting, for the "resend in 0:42" countdown.
@@ -174,11 +175,11 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
           inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" autoFocus aria-label="Phone number"
           onKeyDown={e => { if (e.key === 'Enter') void begin('whatsapp'); }} className={`${input} mb-4`} style={inputStyle} />
         <button onClick={() => { void begin('whatsapp'); }} disabled={busy || phone.replace(/\D/g, '').length < 10} className={primary} style={{ background: 'var(--accent)' }}>
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-5 h-5" />} Continue with WhatsApp
+          {busyWith === 'whatsapp' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-5 h-5" />} Continue with WhatsApp
         </button>
         {smsMode && <button onClick={() => { void begin('sms'); }} disabled={busy || phone.replace(/\D/g, '').length < 10}
           className="w-full mt-2 py-3 rounded-2xl text-sm font-semibold border flex items-center justify-center gap-2 disabled:opacity-60" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-          <Phone className="w-4 h-4" style={{ color: 'var(--muted)' }} /> Not on WhatsApp? Text me a code
+          {busyWith === 'sms' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-4 h-4" style={{ color: 'var(--muted)' }} />} {busyWith === 'sms' ? 'Sending your code…' : 'Not on WhatsApp? Text me a code'}
         </button>}
       </>)}
 
