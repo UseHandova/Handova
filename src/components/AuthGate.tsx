@@ -198,8 +198,8 @@ export default function AuthGate({ onAuth }: Props) {
           {t('zero_fees')}
         </motion.p>
 
-        {/* Trust badges */}
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        {/* Trust badges — only on the first screen; once signing in, keep the form near the top on small phones */}
+        {mode === 'choose' && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.28 }} className="flex gap-3 flex-wrap justify-center mb-10">
           {TRUST_BADGES.map(({ icon: Icon, label, sub }) => (
             <div key={label} className="glass-pill flex items-center gap-2 px-3 py-2 rounded-2xl">
@@ -213,7 +213,7 @@ export default function AuthGate({ onAuth }: Props) {
               </div>
             </div>
           ))}
-        </motion.div>
+        </motion.div>}
 
         {/* Auth card */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}

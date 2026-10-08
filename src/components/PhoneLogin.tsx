@@ -12,7 +12,7 @@ import { createPhoneWallet, pinProofFor, saveDeviceKey, unlockPhoneWallet, weakP
 
 interface Props { onAuth: (account: SmartAccount, address: string) => void; onBack: () => void }
 
-interface Start { challengeId: string; text: string; waLink: string; botNumber: string; sandboxJoin: string; phone: string; expiresAt: number }
+interface Start { challengeId: string; channel: 'whatsapp' | 'sms'; text: string; waLink: string; botNumber: string; sandboxJoin: string; phone: string; expiresAt: number; resendAfter?: number; devMode?: boolean }
 interface Verified { phoneToken: string; phone: string; exists: boolean; salt?: Hex; address?: string; serverShare?: Hex }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -21,6 +21,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) throw new Error(out.error ?? 'Something went wrong. Please try again.');
   return out;
 }
+/** 60000 → "1:00", 5000 → "0:05" */
+const countdown = (ms: number) => { const sec = Math.min(60, Math.max(0, Math.ceil(ms / 1000))); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
 const pretty = (p: string) => (/^234\d{10}$/.test(p) ? `0${p.slice(3, 6)} ${p.slice(6, 9)} ${p.slice(9)}` : `+${p}`);
 
 const input = 'w-full px-4 py-3.5 rounded-xl border text-base outline-none';
@@ -40,7 +42,9 @@ function PinInput({ value, onChange, label, autoFocus, onEnter }: { value: strin
 }
 
 export default function PhoneLogin({ onAuth, onBack }: Props) {
-  const [step, setStep] = useState<'number' | 'confirm' | 'create' | 'unlock'>('number');
+  const [step, setStep] = useState<'number' | 'confirm' | 'sms' | 'create' | 'unlock'>('number');
+  const [code, setCode] = useState('');
+  const [clock, setClock] = useState(() => Date.now());
   const [phone, setPhone] = useState('');
   const [start, setStart] = useState<Start | null>(null);
   const [verified, setVerified] = useState<Verified | null>(null);
@@ -64,12 +68,29 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
     return () => { stop = true; clearInterval(timer); };
   }, [step, start]);
 
-  async function begin() {
+  async function begin(channel: 'whatsapp' | 'sms' = 'whatsapp') {
     setBusy(true); setError(null);
     try {
-      const s = await post<Start>('/api/phone/start', { phone });
-      setStart(s); setStatus('pending'); setStep('confirm');
+      const s = await post<Start>('/api/phone/start', { phone, channel });
+      setStart(s); setStatus('pending'); setCode(''); setClock(Date.now());
+      setStep(s.channel === 'sms' ? 'sms' : 'confirm');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+
+  // Tick once a second while an SMS code is waiting, for the "resend in 0:42" countdown.
+  useEffect(() => {
+    if (step !== 'sms') return;
+    const t = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [step]);
+
+  async function verifySms(value = code) {
+    if (!start || value.length !== 6) return;
+    setBusy(true); setError(null);
+    try {
+      const v = await post<Verified>('/api/phone/verify', { challengeId: start.challengeId, code: value });
+      setVerified(v); setStep(v.exists ? 'unlock' : 'create');
+    } catch (e) { setError((e as Error).message); setCode(''); } finally { setBusy(false); }
   }
 
   async function create() {
@@ -111,13 +132,17 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
 
       {step === 'number' && (<>
         <h2 className="display text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>Continue with your phone number</h2>
-        <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>We'll confirm it's yours on WhatsApp. No SMS, no charges. <a href="/privacy" target="_blank" rel="noreferrer" className="underline">How we use your number</a></p>
+        <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>We'll check it's yours with a quick WhatsApp message, or a code by SMS. <a href="/privacy" target="_blank" rel="noreferrer" className="underline">How we use your number</a></p>
         <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Phone number</label>
         <input value={phone} onChange={e => { setPhone(e.target.value.replace(/[^\d+ ]/g, '').slice(0, 18)); setError(null); }}
           inputMode="tel" autoComplete="tel" placeholder="0803 123 4567" autoFocus aria-label="Phone number"
-          onKeyDown={e => { if (e.key === 'Enter') void begin(); }} className={`${input} mb-4`} style={inputStyle} />
-        <button onClick={() => { void begin(); }} disabled={busy || phone.replace(/\D/g, '').length < 10} className={primary} style={{ background: 'var(--accent)' }}>
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Phone className="w-5 h-5" />} Continue
+          onKeyDown={e => { if (e.key === 'Enter') void begin('whatsapp'); }} className={`${input} mb-4`} style={inputStyle} />
+        <button onClick={() => { void begin('whatsapp'); }} disabled={busy || phone.replace(/\D/g, '').length < 10} className={primary} style={{ background: 'var(--accent)' }}>
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-5 h-5" />} Continue with WhatsApp
+        </button>
+        <button onClick={() => { void begin('sms'); }} disabled={busy || phone.replace(/\D/g, '').length < 10}
+          className="w-full mt-2 py-3 rounded-2xl text-sm font-semibold border flex items-center justify-center gap-2 disabled:opacity-60" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+          <Phone className="w-4 h-4" style={{ color: 'var(--muted)' }} /> Not on WhatsApp? Text me a code
         </button>
       </>)}
 
@@ -148,6 +173,31 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
             First time? WhatsApp needs you to send <span className="mono">{start.sandboxJoin}</span> to {start.botNumber} once before the code works (test mode).
           </p>
         )}
+        <button onClick={() => { void begin('sms'); }} disabled={busy} className="w-full mt-3 text-sm underline underline-offset-2" style={{ color: 'var(--muted)' }}>
+          Not on WhatsApp? Text me a code instead
+        </button>
+      </>)}
+
+      {step === 'sms' && start && (<>
+        <h2 className="display text-xl font-bold mb-1" style={{ color: 'var(--ink)' }}>Enter the code we texted you</h2>
+        <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>We sent a 6-digit code to <strong>{pretty(start.phone)}</strong>. It can take a minute to arrive.</p>
+        <input value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus aria-label="SMS code" placeholder="••••••"
+          onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); setCode(v); setError(null); if (v.length === 6) void verifySms(v); }}
+          className={`${input} text-center text-2xl tracking-[0.6em] mono mb-4`} style={inputStyle} />
+        <button onClick={() => { void verifySms(); }} disabled={busy || code.length < 6} className={primary} style={{ background: 'var(--accent)' }}>
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} Confirm
+        </button>
+        {start.devMode && (
+          <p className="text-xs mt-3 px-3 py-2 rounded-xl" style={{ background: 'rgba(212,160,23,0.12)', color: 'var(--ink)' }}>
+            Test mode: no SMS provider is set up, so the code is in the server log instead of a text.
+          </p>
+        )}
+        <div className="flex justify-between text-sm mt-4">
+          {start.resendAfter && clock < start.resendAfter
+            ? <span style={{ color: 'var(--subtle)' }}>Resend code in {countdown(start.resendAfter - clock)}</span>
+            : <button onClick={() => { void begin('sms'); }} disabled={busy} className="underline underline-offset-2" style={{ color: 'var(--accent)' }}>Send a new code</button>}
+          <button onClick={() => { void begin('whatsapp'); }} disabled={busy} className="underline underline-offset-2" style={{ color: 'var(--muted)' }}>Use WhatsApp instead</button>
+        </div>
       </>)}
 
       {step === 'create' && verified && (<>

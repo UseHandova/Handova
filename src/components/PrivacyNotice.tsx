@@ -11,7 +11,7 @@ const UPDATED = '7 October 2026';
 const ROWS: [string, string, string, string][] = [
   ['Wallet address', 'Your account and payments', 'Arc blockchain (public)', 'Permanent'],
   ['Passkey', 'Signing in with Face ID / fingerprint', 'Your device and Circle. We never see your fingerprint or face', 'Until you remove it from your device'],
-  ['Phone number, locked wallet backup, PIN check', 'Phone sign-in, including on a new phone. We never receive your PIN, only a one-way check of it', 'Our server', 'While your account exists. Login codes are cleared within a day'],
+  ['Phone number, locked wallet backup, PIN check', 'Phone sign-in, including on a new phone. We check the number with a WhatsApp message or an SMS code. We never receive your PIN, only a one-way check of it', 'Our server', 'While your account exists. Login codes are cleared within a day'],
   ['Sign-in session', 'Keeping you signed in', 'Your browser', '7 days'],
   ['Identity check (landlords)', 'Showing tenants you are who you say you are. Your ID and selfie are checked by Didit (or Dojah). We keep only the result and a one-way fingerprint of your ID number, so one ID can\'t verify many accounts', '"Verified" flag on the blockchain (public); fingerprint on our server', 'Flag: permanent. Fingerprint: while your account exists'],
   ['Listing details: address, description, price, photos, videos, WhatsApp number if you add it', 'Showing your home to tenants', 'Details on the blockchain (public); photos and videos on our server or storage', 'Blockchain: permanent. Photos: until you ask us to remove them'],
@@ -30,6 +30,7 @@ const SHARED: [string, string][] = [
   ['Circle', 'wallets and passkey sign-in'],
   ['Didit / Dojah', 'landlord identity checks (your ID and selfie go to them, not to us)'],
   ['Twilio (WhatsApp)', 'sending and receiving WhatsApp messages'],
+  ['Termii', 'sending sign-in codes by SMS to numbers not on WhatsApp'],
   ['Groq', 'reading WhatsApp listing messages and transcribing voice notes'],
   ['OpenStreetMap', 'finding addresses on the map'],
   ['Arc blockchain', 'payments, listings and verification flags: public by design'],
