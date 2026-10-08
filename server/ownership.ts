@@ -18,12 +18,13 @@
 import type { Express, Request, Response } from 'express';
 import express from 'express';
 import multer from 'multer';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseAbi } from 'viem';
 import { db } from './db';
-import { chainClient, requireSession, serverHmac } from './auth';
+import { chainClient, requireSession } from './auth';
+import { openFile, sealFile } from './file-crypto';
 import type { FeatureConfig } from './features';
 
 const ABI = parseAbi([
@@ -54,27 +55,6 @@ interface Req {
 /** `enc`: encrypted on disk. `sha256`: fingerprint of the original, kept after the file is deleted. */
 type StoredFile = { name: string; file: string; mime: string; sha256?: string; size?: number; enc?: boolean };
 
-/**
- * Key for documents at rest. Set OWNERSHIP_KEY (64 hex chars) in production. Without it, a key is derived
- * from the session secret, so changing that secret would make pending documents unreadable.
- */
-function docKey(): Buffer {
-  const k = process.env.OWNERSHIP_KEY ?? '';
-  if (/^[0-9a-fA-F]{64}$/.test(k)) return Buffer.from(k, 'hex');
-  return Buffer.from(serverHmac('ownership-documents-at-rest'), 'hex');
-}
-/** File layout: 12-byte IV ‖ 16-byte auth tag ‖ ciphertext. */
-function encrypt(plain: Buffer): Buffer {
-  const iv = randomBytes(12);
-  const c = createCipheriv('aes-256-gcm', docKey(), iv);
-  const body = Buffer.concat([c.update(plain), c.final()]);
-  return Buffer.concat([iv, c.getAuthTag(), body]);
-}
-function decrypt(blob: Buffer): Buffer {
-  const d = createDecipheriv('aes-256-gcm', docKey(), blob.subarray(0, 12));
-  d.setAuthTag(blob.subarray(12, 28));
-  return Buffer.concat([d.update(blob.subarray(28)), d.final()]);
-}
 
 export function mountOwnership(app: Express, config: FeatureConfig | null, dir = process.env.OWNERSHIP_DIR || 'server/data/ownership') {
   const root = resolve(dir);
@@ -169,7 +149,7 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
 
     const stored: StoredFile[] = files.map(f => {
       const file = `${randomBytes(12).toString('hex')}.bin`;
-      writeFileSync(join(root, file), encrypt(f.buffer), { mode: 0o600 });
+      writeFileSync(join(root, file), sealFile(f.buffer), { mode: 0o600 });
       return { name: f.originalname.slice(0, 80), file, mime: f.mimetype, sha256: createHash('sha256').update(f.buffer).digest('hex'), size: f.size, enc: true };
     });
     const now = Date.now();
@@ -187,7 +167,7 @@ export function mountOwnership(app: Express, config: FeatureConfig | null, dir =
     if (!f) return bad(res, 404, 'Document not found.', 'not_found');
     if (r.files_deleted_at) return bad(res, 410, 'This document was deleted after review. Only its fingerprint is kept.', 'deleted');
     let body: Buffer;
-    try { body = f.enc ? decrypt(readFileSync(join(root, f.file))) : readFileSync(join(root, f.file)); }
+    try { body = f.enc ? openFile(readFileSync(join(root, f.file))) : readFileSync(join(root, f.file)); }
     catch { return bad(res, 404, 'Document not found.', 'not_found'); }
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Content-Type', f.mime);

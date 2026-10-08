@@ -37,6 +37,7 @@ interface Row {
   id: number; listing_id: string; tenant: string; landlord: string; place: string; status: Status;
   slot_at: number; tenant_name: string; tenant_phone: string; landlord_phone: string; note: string; landlord_note: string;
   tenant_confirmed_at: number | null; landlord_confirmed_at: number | null; missed_by: string; created_at: number; updated_at: number;
+  payment_method: 'escrow' | 'cash';
 }
 
 const lower = (a: string) => a.toLowerCase();
@@ -78,6 +79,9 @@ export function ensureInspectionsTable() {
   );
   CREATE INDEX IF NOT EXISTS inspections_tenant ON inspections (tenant);
   CREATE INDEX IF NOT EXISTS inspections_landlord ON inspections (landlord);`);
+  // Added later: how the landlord wants the first payment (escrow unless they choose cash).
+  const cols = new Set((db().query('PRAGMA table_info(inspections)').all() as { name: string }[]).map(c => c.name));
+  if (!cols.has('payment_method')) db().exec("ALTER TABLE inspections ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'escrow'");
 }
 
 /** Tenant may pay: both confirmed, or tenant confirmed and the landlord stayed silent past the grace period. */
@@ -98,7 +102,7 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
       tenantName: r.tenant_name, tenantPhone: r.tenant_phone, landlordPhone: r.landlord_phone,
       note: r.note, landlordNote: r.landlord_note,
       tenantConfirmedAt: r.tenant_confirmed_at, landlordConfirmedAt: r.landlord_confirmed_at,
-      missedBy: r.missed_by || null, canPay: canPay(r), createdAt: r.created_at, updatedAt: r.updated_at,
+      missedBy: r.missed_by || null, canPay: canPay(r), paymentMethod: r.payment_method ?? 'escrow', createdAt: r.created_at, updatedAt: r.updated_at,
       ...(notified !== undefined && { notified }),
     };
   };
@@ -184,7 +188,7 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
     const note = str(b.note, 300);
     const now = Date.now();
     const wrongState = (msg: string) => bad(res, 409, msg, 'wrong_state');
-    const landlordOnly = ['approve', 'propose', 'decline'], tenantOnly = ['accept', 'reschedule', 'cancel'];
+    const landlordOnly = ['approve', 'propose', 'decline', 'payment'], tenantOnly = ['accept', 'reschedule', 'cancel'];
     if (landlordOnly.includes(action) && isTenant) return bad(res, 403, 'Only the landlord can do this.', 'not_landlord');
     if (tenantOnly.includes(action) && !isTenant) return bad(res, 403, 'Only the tenant can do this.', 'not_tenant');
 
@@ -249,6 +253,22 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
         notified = await tell(isTenant ? r.landlord_phone : r.tenant_phone,
           `Handova: the inspection in ${r.place} (${lagosTime(r.slot_at)}) was marked as not having happened. ${isTenant ? 'The tenant may book a new time.' : 'You can book a new time in the app.'}`);
         break;
+      case 'payment': {
+        // The landlord chooses how this tenant pays: through escrow (protected) or in cash.
+        const method = b.method;
+        if (method !== 'escrow' && method !== 'cash') return bad(res, 400, 'Choose escrow or cash.');
+        if (!['approved', 'completed'].includes(r.status)) return wrongState('You can choose how they pay once the visit is confirmed.');
+        const cashStarted = (() => {
+          try { return !!db().query("SELECT 1 FROM cash_payments WHERE inspection_id = ? AND status IN ('awaiting_landlord','confirmed','disputed') LIMIT 1").get(r.id); }
+          catch { return false; }
+        })();
+        if (cashStarted) return wrongState('The tenant has already sent a cash receipt, so the payment method can\'t change now.');
+        next = save(r.id, { payment_method: method });
+        notified = await tell(r.tenant_phone, method === 'cash'
+          ? `Handova: the landlord in ${r.place} would like to be paid in cash. After you pay, upload the receipt in the app so they can confirm it.${open(`/tenant?visit=${r.listing_id}`)}`
+          : `Handova: the landlord in ${r.place} wants the payment through Handova escrow. Your money stays protected until you move in.${open(`/tenant?visit=${r.listing_id}`)}`);
+        break;
+      }
       default:
         return bad(res, 404, 'Unknown action.', 'unknown_action');
     }

@@ -37,6 +37,8 @@ import { mountChat } from './chat';
 import { handleInboundLogin, mountPhoneAuth } from './phone-auth';
 import { mountOwnership } from './ownership';
 import { mountAdmin } from './admin';
+import { mountCash } from './cash';
+import { mountSavings, vaultFromEnv } from './savings';
 import { backupConfigFromEnv, scheduleBackups } from './backup';
 import { openDrafts, type Draft } from './drafts';
 
@@ -393,6 +395,10 @@ mountChat(app, featureConfigFromEnv(), whatsappNotify);
 mountPhoneAuth(app);
 mountOwnership(app, featureConfigFromEnv());
 mountAdmin(app, featureConfigFromEnv());
+mountCash(app, featureConfigFromEnv(), whatsappNotify);
+const savings = mountSavings(app, vaultFromEnv(), whatsappNotify);
+// Savings reminders: check hourly; each plan gets at most one a day.
+setInterval(() => { savings.sendReminders().catch(e => console.error('[Savings] Reminders failed:', e instanceof Error ? e.message : e)); }, 3600_000).unref();
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
