@@ -6,6 +6,8 @@ dist
 contracts
 lib
 src
+!src/lib/arc-rpc.ts
+!src/lib/savings-math.ts
 public
 server/data
 server/uploads

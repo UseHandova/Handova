@@ -9,6 +9,8 @@
 | RentSavingsVault | `0x319c6Da874F81379E2ADa1FE3c539816813B8dCA` (deployed 2026-10-08, `contracts/script/DeploySavingsVault.s.sol`) |
 
 USDC (Arc Testnet): `0x3600000000000000000000000000000000000000`
+
+API server (Railway, project `handova`, service `api`, volume at `/app/server/data`): https://api-production-f477.up.railway.app — health at `/api/health`. Deploy with `railway up` from the repo root.
 Deployed 2026-10-06 with `contracts/script/DeployHandova.s.sol` (NFT already linked). Owner/deployer keystore: `rentflow-deployer` (password in `~/.rentflow-deployer-password`). Verifier (KYC backend key): `0x6380197079a664E358842Bb21d34775B431762cD`.
 
 ---
