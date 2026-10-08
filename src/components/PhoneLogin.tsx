@@ -4,10 +4,12 @@
  * See server/phone-auth.ts and src/lib/phone-wallet.ts for how the wallet key stays safe.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Loader2, LockKeyhole, MessageCircle, Phone } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import type { Hex } from 'viem';
+import { confirmFirebaseSms, firebaseConfigured, firebaseError, sendFirebaseSms } from '@/lib/firebase-sms';
+import type { ConfirmationResult } from 'firebase/auth';
 import { createPhoneWallet, pinProofFor, saveDeviceKey, unlockPhoneWallet, weakPin } from '@/lib/phone-wallet';
 
 interface Props { onAuth: (account: SmartAccount, address: string) => void; onBack: () => void }
@@ -20,6 +22,13 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   const out = await res.json().catch(() => ({})) as T & { error?: string };
   if (!res.ok) throw new Error(out.error ?? 'Something went wrong. Please try again.');
   return out;
+}
+/** 0803 123 4567 → 2348031234567 (same rule as the server). */
+function toE164(raw: string): string {
+  const d = raw.replace(/\D/g, '');
+  if (/^0[789]\d{9}$/.test(d)) return `234${d.slice(1)}`;
+  if (/^[789]\d{9}$/.test(d)) return `234${d}`;
+  return /^\d{10,15}$/.test(d) ? d : '';
 }
 /** 60000 → "1:00", 5000 → "0:05" */
 const countdown = (ms: number) => { const sec = Math.min(60, Math.max(0, Math.ceil(ms / 1000))); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
@@ -54,6 +63,15 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Which ways of proving a number this server offers (WhatsApp, and SMS via Firebase / Termii / test mode).
+  const [smsMode, setSmsMode] = useState<'firebase' | 'termii' | 'dev' | null>(null);
+  const fbConfirm = useRef<ConfirmationResult | null>(null);
+  useEffect(() => {
+    fetch('/api/phone/options').then(r => r.json() as Promise<{ sms: 'firebase' | 'termii' | 'dev' | null }>)
+      .then(o => setSmsMode(o.sms === 'firebase' && !firebaseConfigured ? null : o.sms))
+      .catch(() => setSmsMode(null));
+  }, []);
+
   // Wait for the WhatsApp message to arrive.
   useEffect(() => {
     if (step !== 'confirm' || !start) return;
@@ -71,6 +89,16 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
   async function begin(channel: 'whatsapp' | 'sms' = 'whatsapp') {
     setBusy(true); setError(null);
     try {
+      if (channel === 'sms' && smsMode === 'firebase') {
+        // Google sends the code; we only see the proof afterwards.
+        const e164 = toE164(phone);
+        if (!e164) throw new Error('Enter your phone number, e.g. 0803 123 4567.');
+        try { fbConfirm.current = await sendFirebaseSms(e164, 'phone-recaptcha'); } catch (e) { throw new Error(firebaseError(e)); }
+        const now = Date.now();
+        setStart({ challengeId: 'firebase', channel: 'sms', text: '', waLink: '', botNumber: '', sandboxJoin: '', phone: e164, expiresAt: now + 10 * 60_000, resendAfter: now + 60_000, devMode: false });
+        setStatus('pending'); setCode(''); setClock(now); setStep('sms');
+        return;
+      }
       const s = await post<Start>('/api/phone/start', { phone, channel });
       setStart(s); setStatus('pending'); setCode(''); setClock(Date.now());
       setStep(s.channel === 'sms' ? 'sms' : 'confirm');
@@ -88,7 +116,14 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
     if (!start || value.length !== 6) return;
     setBusy(true); setError(null);
     try {
-      const v = await post<Verified>('/api/phone/verify', { challengeId: start.challengeId, code: value });
+      let v: Verified;
+      if (start.challengeId === 'firebase' && fbConfirm.current) {
+        let idToken: string;
+        try { idToken = await confirmFirebaseSms(fbConfirm.current, value); } catch (e) { throw new Error(firebaseError(e)); }
+        v = await post<Verified>('/api/phone/firebase', { idToken });
+      } else {
+        v = await post<Verified>('/api/phone/verify', { challengeId: start.challengeId, code: value });
+      }
       setVerified(v); setStep(v.exists ? 'unlock' : 'create');
     } catch (e) { setError((e as Error).message); setCode(''); } finally { setBusy(false); }
   }
@@ -126,6 +161,7 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
 
   return (
     <div>
+      <div id="phone-recaptcha" />
       <button onClick={back} className="flex items-center gap-1 text-sm mb-4 -ml-0.5 hover:opacity-60" style={{ color: 'var(--muted)' }}>
         <ArrowLeft className="w-4 h-4" /> {step === 'number' ? 'Back' : 'Use a different number'}
       </button>
@@ -140,10 +176,10 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
         <button onClick={() => { void begin('whatsapp'); }} disabled={busy || phone.replace(/\D/g, '').length < 10} className={primary} style={{ background: 'var(--accent)' }}>
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-5 h-5" />} Continue with WhatsApp
         </button>
-        <button onClick={() => { void begin('sms'); }} disabled={busy || phone.replace(/\D/g, '').length < 10}
+        {smsMode && <button onClick={() => { void begin('sms'); }} disabled={busy || phone.replace(/\D/g, '').length < 10}
           className="w-full mt-2 py-3 rounded-2xl text-sm font-semibold border flex items-center justify-center gap-2 disabled:opacity-60" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
           <Phone className="w-4 h-4" style={{ color: 'var(--muted)' }} /> Not on WhatsApp? Text me a code
-        </button>
+        </button>}
       </>)}
 
       {step === 'confirm' && start && (<>
@@ -173,9 +209,9 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
             First time? WhatsApp needs you to send <span className="mono">{start.sandboxJoin}</span> to {start.botNumber} once before the code works (test mode).
           </p>
         )}
-        <button onClick={() => { void begin('sms'); }} disabled={busy} className="w-full mt-3 text-sm underline underline-offset-2" style={{ color: 'var(--muted)' }}>
+        {smsMode && <button onClick={() => { void begin('sms'); }} disabled={busy} className="w-full mt-3 text-sm underline underline-offset-2" style={{ color: 'var(--muted)' }}>
           Not on WhatsApp? Text me a code instead
-        </button>
+        </button>}
       </>)}
 
       {step === 'sms' && start && (<>

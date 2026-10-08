@@ -30,7 +30,7 @@ const SHARED: [string, string][] = [
   ['Circle', 'wallets and passkey sign-in'],
   ['Didit / Dojah', 'landlord identity checks (your ID and selfie go to them, not to us)'],
   ['Twilio (WhatsApp)', 'sending and receiving WhatsApp messages'],
-  ['Termii', 'sending sign-in codes by SMS to numbers not on WhatsApp'],
+  ['Google Firebase / Termii', 'sending sign-in codes by SMS to numbers not on WhatsApp'],
   ['Groq', 'reading WhatsApp listing messages and transcribing voice notes'],
   ['OpenStreetMap', 'finding addresses on the map'],
   ['Arc blockchain', 'payments, listings and verification flags: public by design'],
