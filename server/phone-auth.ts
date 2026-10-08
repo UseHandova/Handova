@@ -1,9 +1,12 @@
 /**
  * Phone-number login — for people without (or who lose) a passkey.
  *
- * 1. Prove the number with a "reverse OTP": the app opens WhatsApp with "HANDOVA LOGIN 482913" pre-typed and
- *    the person sends it to our bot. A message *from* their number proves they own it — free, no SMS costs,
- *    and user-started WhatsApp chats need no message templates.
+ * 1. Prove the number, two ways:
+ *    - WhatsApp (default, free): a "reverse OTP". The app opens WhatsApp with "HANDOVA LOGIN 482913" pre-typed and
+ *      the person sends it to our bot. A message *from* their number proves they own it; user-started chats need
+ *      no message templates.
+ *    - SMS (for numbers not on WhatsApp): we text a 6-digit code (Termii, see server/sms.ts) and they type it in.
+ *      Only a keyed hash of the code is stored; 5 wrong tries end that code.
  * 2. The wallet key is made on the person's device and locked with their 6-digit PIN. We keep a locked backup
  *    so a new phone can sign in. Unlocking needs all three: the phone number (step 1), the PIN (every 5 wrong
  *    tries → a lock: 15 minutes the first time, then 24 hours), and a per-account server share. The server alone
@@ -20,13 +23,16 @@ import { isAddress, isHex } from 'viem';
 import { db } from './db';
 import { serverHmac } from './auth';
 import { normalisePhone } from './inspections';
+import { smsFromEnv, type SmsSender } from './sms';
 
 export const CODE_TTL_MS = 10 * 60_000;
 const TOKEN_TTL_MS = 15 * 60_000;
 const TRIES_PER_LOCK = 5, FIRST_LOCK_MS = 15 * 60_000, LONG_LOCK_MS = 24 * 3600_000;
 const START_LIMIT = 5; // login codes per phone per hour
+const SMS_TRIES = 5;   // wrong codes before an SMS code stops working
+export const SMS_RESEND_MS = 60_000;
 
-interface Challenge { id: string; phone: string; code: string; status: 'pending' | 'verified' | 'wrong_number'; from_phone: string; created_at: number; expires_at: number }
+interface Challenge { id: string; phone: string; code: string; status: 'pending' | 'verified' | 'wrong_number'; from_phone: string; created_at: number; expires_at: number; channel: 'whatsapp' | 'sms'; code_hash: string; attempts: number }
 interface PhoneAccount {
   phone: string; address: string; salt: string; verifier: string; server_share: string; blob: string; iv: string;
   failed: number; locked_until: number; created_at: number;
@@ -60,6 +66,11 @@ export function ensurePhoneTables() {
     server_share TEXT NOT NULL,
     created_at INTEGER NOT NULL
   );`);
+  // Added for SMS codes.
+  const cols = new Set((db().query('PRAGMA table_info(phone_challenges)').all() as { name: string }[]).map(c => c.name));
+  if (!cols.has('channel')) db().exec("ALTER TABLE phone_challenges ADD COLUMN channel TEXT NOT NULL DEFAULT 'whatsapp'");
+  if (!cols.has('code_hash')) db().exec("ALTER TABLE phone_challenges ADD COLUMN code_hash TEXT NOT NULL DEFAULT ''");
+  if (!cols.has('attempts')) db().exec('ALTER TABLE phone_challenges ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0');
 }
 
 /** Signed, short-lived proof that this browser verified `phone`. */
@@ -87,7 +98,7 @@ export function handleInboundLogin(fromRaw: string, body: string): string | null
   if (!m) return null;
   ensurePhoneTables();
   const from = normalisePhone(fromRaw.replace(/^whatsapp:/, ''));
-  const c = db().query('SELECT * FROM phone_challenges WHERE code = ?').get(m[1]) as Challenge | null;
+  const c = db().query("SELECT * FROM phone_challenges WHERE code = ? AND channel = 'whatsapp'").get(m[1]) as Challenge | null;
   if (!c || c.expires_at < Date.now()) return 'That login code has expired. Go back to Handova and tap "Continue with phone number" again.';
   if (c.status === 'verified') return '✅ You\'re already verified. Go back to Handova to finish signing in.';
   if (from !== c.phone) {
@@ -98,21 +109,38 @@ export function handleInboundLogin(fromRaw: string, body: string): string | null
   return '✅ Number confirmed! Go back to Handova to finish signing in.';
 }
 
-export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHATSAPP_NUMBER || '') {
+export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHATSAPP_NUMBER || '', sms: SmsSender | null = smsFromEnv()) {
   ensurePhoneTables();
   const bad = (res: Response, status: number, error: string, code = 'bad_request') => res.status(status).json({ ok: false, code, error });
   const botDigits = botNumber.replace(/\D/g, '');
   const sandboxJoin = process.env.TWILIO_SANDBOX_JOIN || ''; // e.g. "join gun-heart" while on the Twilio sandbox
 
   /** Start: returns the code to send and a wa.me link with it pre-typed. */
-  app.post('/api/phone/start', (req: Request, res: Response) => {
+  app.post('/api/phone/start', async (req: Request, res: Response) => {
     const phone = normalisePhone(req.body?.phone);
     if (!phone) return bad(res, 400, 'Enter your phone number, e.g. 0803 123 4567.', 'phone');
-    if (!botDigits) return bad(res, 503, 'Phone sign-in isn\'t set up on this server yet. Use a passkey for now.', 'unavailable');
+    const channel = req.body?.channel === 'sms' ? 'sms' : 'whatsapp';
+    if (channel === 'whatsapp' && !botDigits) return bad(res, 503, 'WhatsApp sign-in isn\'t set up on this server yet. Get a code by SMS instead.', 'unavailable');
+    if (channel === 'sms' && !sms) return bad(res, 503, 'SMS codes aren\'t set up on this server yet. Use WhatsApp instead.', 'sms_unavailable');
     const now = Date.now();
     const recent = (db().query('SELECT COUNT(*) AS n FROM phone_challenges WHERE phone = ? AND created_at > ?').get(phone, now - 3600_000) as { n: number }).n;
     if (recent >= START_LIMIT) return bad(res, 429, 'Too many attempts for this number. Please wait an hour and try again.', 'rate_limited');
     db().query('DELETE FROM phone_challenges WHERE expires_at < ?').run(now - 86_400_000);
+
+    if (channel === 'sms') {
+      const last = db().query("SELECT created_at FROM phone_challenges WHERE phone = ? AND channel = 'sms' ORDER BY created_at DESC LIMIT 1").get(phone) as { created_at: number } | null;
+      if (last && now - last.created_at < SMS_RESEND_MS) return bad(res, 429, `Please wait ${Math.ceil((SMS_RESEND_MS - (now - last.created_at)) / 1000)} seconds before asking for another code.`, 'too_soon');
+      const smsId = randomBytes(16).toString('hex');
+      const smsCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
+      db().query("INSERT INTO phone_challenges (id, phone, code, status, created_at, expires_at, channel, code_hash) VALUES (?, ?, ?, 'pending', ?, ?, 'sms', ?)")
+        .run(smsId, phone, `sms-${smsId}`, now, now + CODE_TTL_MS, serverHmac(`sms:${smsId}:${smsCode}`));
+      const out = await sms!(phone, `Your Handova code is ${smsCode}. It expires in 10 minutes. Never share it — Handova will never ask you for it.`);
+      if (!out.ok) {
+        db().query('DELETE FROM phone_challenges WHERE id = ?').run(smsId);
+        return bad(res, 502, 'We couldn\'t send the SMS just now. Try again in a minute, or use WhatsApp instead.', 'sms_failed');
+      }
+      return res.json({ ok: true, challengeId: smsId, channel: 'sms', phone, expiresAt: now + CODE_TTL_MS, resendAfter: now + SMS_RESEND_MS, devMode: !!sms!.devMode });
+    }
     let code = '';
     for (let i = 0; i < 5 && !code; i++) {
       const c = String(randomInt(0, 1_000_000)).padStart(6, '0');
@@ -121,7 +149,7 @@ export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHAT
     const id = randomBytes(16).toString('hex');
     db().query("INSERT INTO phone_challenges (id, phone, code, status, created_at, expires_at) VALUES (?, ?, ?, 'pending', ?, ?)").run(id, phone, code, now, now + CODE_TTL_MS);
     const text = `HANDOVA LOGIN ${code}`;
-    res.json({ ok: true, challengeId: id, code, text, phone, waLink: `https://wa.me/${botDigits}?text=${encodeURIComponent(text)}`, botNumber: `+${botDigits}`, sandboxJoin, expiresAt: now + CODE_TTL_MS });
+    res.json({ ok: true, channel: 'whatsapp', challengeId: id, code, text, phone, waLink: `https://wa.me/${botDigits}?text=${encodeURIComponent(text)}`, botNumber: `+${botDigits}`, sandboxJoin, expiresAt: now + CODE_TTL_MS });
   });
 
   /** Poll until the WhatsApp message arrives. On success: a phone token, and whether an account exists. */
@@ -131,16 +159,40 @@ export function mountPhoneAuth(app: Express, botNumber = process.env.TWILIO_WHAT
     if (c.status === 'wrong_number') return res.json({ ok: true, status: 'wrong_number', error: 'That message came from a different number. Send it from the number you entered.' });
     if (c.expires_at < Date.now()) return res.json({ ok: true, status: 'expired' });
     if (c.status !== 'verified') return res.json({ ok: true, status: 'pending' });
-    const acct = db().query('SELECT address, salt FROM phone_accounts WHERE phone = ?').get(c.phone) as Pick<PhoneAccount, 'address' | 'salt'> | null;
+    res.json(verifiedPayload(c.phone));
+  });
+
+  /** SMS: check the code they typed. On success, the same answer as a verified status. */
+  app.post('/api/phone/verify', (req: Request, res: Response) => {
+    const c = db().query('SELECT * FROM phone_challenges WHERE id = ?').get(String(req.body?.challengeId ?? '')) as Challenge | null;
+    if (!c || c.channel !== 'sms') return bad(res, 404, 'Sign-in request not found. Start again.', 'not_found');
+    if (c.status === 'verified') return bad(res, 409, 'This code was already used. Start again to get a new one.', 'used');
+    if (c.expires_at < Date.now()) return bad(res, 410, 'This code has expired. Ask for a new one.', 'expired');
+    if (c.attempts >= SMS_TRIES) return bad(res, 429, 'Too many wrong codes. Ask for a new one.', 'too_many');
+    const code = String(req.body?.code ?? '').replace(/\D/g, '');
+    const expected = serverHmac(`sms:${c.id}:${code}`);
+    const ok = code.length === 6 && expected.length === c.code_hash.length && timingSafeEqual(Buffer.from(expected), Buffer.from(c.code_hash));
+    if (!ok) {
+      db().query('UPDATE phone_challenges SET attempts = attempts + 1 WHERE id = ?').run(c.id);
+      const left = SMS_TRIES - c.attempts - 1;
+      return bad(res, 400, left > 0 ? `That code isn't right. ${left} ${left === 1 ? 'try' : 'tries'} left.` : 'Too many wrong codes. Ask for a new one.', left > 0 ? 'wrong_code' : 'too_many');
+    }
+    db().query("UPDATE phone_challenges SET status = 'verified', from_phone = phone WHERE id = ?").run(c.id);
+    res.json(verifiedPayload(c.phone));
+  });
+
+  /** The number is proven: a phone token, plus what the device needs for a new or existing account. */
+  function verifiedPayload(phone: string) {
+    const acct = db().query('SELECT address, salt FROM phone_accounts WHERE phone = ?').get(phone) as Pick<PhoneAccount, 'address' | 'salt'> | null;
     let serverShare: string | undefined;
     if (!acct) {
       // New account: hand out the server share now (the number is proven) so the device can lock its key with it.
-      const pending = db().query('SELECT server_share FROM phone_pending_shares WHERE phone = ?').get(c.phone) as { server_share: string } | null;
+      const pending = db().query('SELECT server_share FROM phone_pending_shares WHERE phone = ?').get(phone) as { server_share: string } | null;
       serverShare = pending?.server_share ?? `0x${randomBytes(32).toString('hex')}`;
-      db().query('INSERT OR REPLACE INTO phone_pending_shares (phone, server_share, created_at) VALUES (?, ?, ?)').run(c.phone, serverShare, Date.now());
+      db().query('INSERT OR REPLACE INTO phone_pending_shares (phone, server_share, created_at) VALUES (?, ?, ?)').run(phone, serverShare, Date.now());
     }
-    res.json({ ok: true, status: 'verified', phoneToken: issuePhoneToken(c.phone), phone: c.phone, exists: !!acct, ...(acct ? { salt: acct.salt, address: acct.address } : { serverShare }) });
-  });
+    return { ok: true, status: 'verified', phoneToken: issuePhoneToken(phone), phone, exists: !!acct, ...(acct ? { salt: acct.salt, address: acct.address } : { serverShare }) };
+  }
 
   /** New account: store the locked backup (the server never sees the key or the PIN). */
   app.post('/api/phone/account', (req: Request, res: Response) => {

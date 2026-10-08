@@ -20,6 +20,9 @@ const { db } = await import('./db');
 
 let server: Server;
 let base = '';
+let noSmsBase = '';
+const texts: { phone: string; text: string }[] = [];
+let smsFails = false;
 const PHONE = '0803 123 4567', E164 = '2348031234567';
 
 async function post(path: string, body: unknown) {
@@ -37,12 +40,20 @@ async function verify(from = E164) {
 beforeAll(async () => {
   const app = express();
   app.use(express.json());
-  mountPhoneAuth(app, 'whatsapp:+14155238886');
+  mountPhoneAuth(app, 'whatsapp:+14155238886', async (phone, text) => { if (smsFails) return { ok: false, error: 'down' }; texts.push({ phone, text }); return { ok: true }; });
   await new Promise<void>(r => { server = app.listen(0, () => r()); });
   const addr = server.address();
   base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+  // A second server with no SMS provider configured.
+  const app2 = express();
+  app2.use(express.json());
+  mountPhoneAuth(app2, 'whatsapp:+14155238886', null);
+  noSmsServer = await new Promise<Server>(r => { const sv = app2.listen(0, () => r(sv)); });
+  const a2 = noSmsServer.address();
+  noSmsBase = `http://127.0.0.1:${typeof a2 === 'object' && a2 ? a2.port : 0}`;
 });
-afterAll(() => server?.close());
+let noSmsServer: Server;
+afterAll(() => { server?.close(); noSmsServer?.close(); });
 
 describe('PIN rules and crypto', () => {
   test('weak PINs are refused with a reason', () => {
@@ -144,5 +155,73 @@ describe('new account → sign in on another phone', () => {
     let last = 0;
     for (let i = 0; i < 6; i++) last = (await post('/api/phone/start', { phone: PHONE })).status;
     expect(last).toBe(429);
+  });
+});
+
+describe('SMS codes, for numbers not on WhatsApp', () => {
+  const SMS_PHONE = '0907 000 1111', SMS_E164 = '2349070001111';
+  const smsCode = () => texts.at(-1)!.text.match(/\b(\d{6})\b/)![1];
+  const resetResendTimer = () => db().query("UPDATE phone_challenges SET created_at = created_at - 61000 WHERE phone = ? AND channel = 'sms'").run(SMS_E164);
+
+  test('the code is texted to the number and never returned to the browser', async () => {
+    texts.length = 0;
+    const r = await post('/api/phone/start', { phone: SMS_PHONE, channel: 'sms' });
+    expect(r.body).toMatchObject({ channel: 'sms', phone: SMS_E164 });
+    expect(r.body.code).toBeUndefined();
+    expect(r.body.waLink).toBeUndefined();
+    expect(texts[0].phone).toBe(SMS_E164);
+    expect(texts[0].text).toMatch(/Your Handova code is \d{6}/);
+    expect(texts[0].text).toContain('Never share it');
+  });
+  test('only a hash of the code is stored', () => {
+    const row = db().query("SELECT code, code_hash FROM phone_challenges WHERE phone = ? AND channel = 'sms'").get(SMS_E164) as { code: string; code_hash: string };
+    expect(row.code).not.toBe(smsCode());
+    expect(row.code_hash).not.toContain(smsCode());
+  });
+  test('asking again within a minute is refused', async () => {
+    expect((await post('/api/phone/start', { phone: SMS_PHONE, channel: 'sms' })).body.code).toBe('too_soon');
+  });
+  test('a wrong code counts down; the right code verifies, once', async () => {
+    const id = (db().query("SELECT id FROM phone_challenges WHERE phone = ? AND channel = 'sms'").get(SMS_E164) as { id: string }).id;
+    const wrong = await post('/api/phone/verify', { challengeId: id, code: '000000' === smsCode() ? '111111' : '000000' });
+    expect(wrong.body).toMatchObject({ code: 'wrong_code', error: expect.stringContaining('4 tries left') });
+    const ok = await post('/api/phone/verify', { challengeId: id, code: smsCode() });
+    expect(ok.body).toMatchObject({ status: 'verified', phone: SMS_E164, exists: false, phoneToken: expect.any(String), serverShare: expect.stringMatching(/^0x/) });
+    expect((await post('/api/phone/verify', { challengeId: id, code: smsCode() })).body.code).toBe('used');
+  });
+  test('an SMS-verified number can create an account like a WhatsApp-verified one', async () => {
+    resetResendTimer();
+    await post('/api/phone/start', { phone: SMS_PHONE, channel: 'sms' });
+    const id = (db().query("SELECT id FROM phone_challenges WHERE phone = ? AND channel = 'sms' ORDER BY created_at DESC").get(SMS_E164) as { id: string }).id;
+    const v = (await post('/api/phone/verify', { challengeId: id, code: smsCode() })).body;
+    const pk = generatePrivateKey();
+    const locked = await lockKey('739204', v.serverShare, pk);
+    expect((await post('/api/phone/account', { phoneToken: v.phoneToken, address: privateKeyToAccount(pk).address, ...locked })).status).toBe(200);
+  });
+  test('five wrong codes end that code', async () => {
+    resetResendTimer();
+    await post('/api/phone/start', { phone: SMS_PHONE, channel: 'sms' });
+    const id = (db().query("SELECT id FROM phone_challenges WHERE phone = ? AND channel = 'sms' ORDER BY created_at DESC").get(SMS_E164) as { id: string }).id;
+    const bad = smsCode() === '123456' ? '654321' : '123456';
+    let last: Record<string, any> = {};
+    for (let i = 0; i < 5; i++) last = (await post('/api/phone/verify', { challengeId: id, code: bad })).body;
+    expect(last.code).toBe('too_many');
+    expect((await post('/api/phone/verify', { challengeId: id, code: smsCode() })).body.code).toBe('too_many'); // even the right one
+  });
+  test('a WhatsApp message with an SMS code does nothing', () => {
+    expect(handleInboundLogin(`whatsapp:+${SMS_E164}`, `HANDOVA LOGIN ${smsCode()}`)).toContain('expired');
+  });
+  test('if the SMS provider fails, we say so and nothing is left behind', async () => {
+    db().query('DELETE FROM phone_challenges WHERE phone = ?').run('2349070002222');
+    smsFails = true;
+    const r = await post('/api/phone/start', { phone: '0907 000 2222', channel: 'sms' });
+    smsFails = false;
+    expect(r.status).toBe(502);
+    expect(r.body.error).toContain('use WhatsApp instead');
+    expect((db().query('SELECT COUNT(*) AS n FROM phone_challenges WHERE phone = ?').get('2349070002222') as { n: number }).n).toBe(0);
+  });
+  test('a server without SMS set up says so', async () => {
+    const res = await fetch(`${noSmsBase}/api/phone/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '0907 000 3333', channel: 'sms' }) });
+    expect(((await res.json()) as { code: string }).code).toBe('sms_unavailable');
   });
 });
