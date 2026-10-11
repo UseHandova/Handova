@@ -202,6 +202,18 @@ body::after {
   }
 }
 
+/* ── Touch screens: no live blur ───────────────────────────────────────────────
+   Phones (iOS Safari especially) flash the whole screen when a full-page blur appears or changes — every popup and
+   the frosted bars use one, so each tap that opened something made the page "blink". Popups keep their dark
+   backdrop; bars and glass become solid. Desktops with a mouse keep the frosted look. */
+@media (hover: none) and (pointer: coarse) {
+  *, *::before, *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  :root, .dark { --bar: var(--bg); --glass-card: var(--surface-strong); }
+}
+
 /* ── Lite mode (low-end phones, data saver, reduced motion) ─────────────────── */
 .lite *,
 .lite *::before,
