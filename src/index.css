@@ -76,7 +76,15 @@
 /* ─── Base ──────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  /* Phones flash a grey/blue box over whatever is tapped — over a whole modal or card when the tap lands inside one,
+     which looks like the page blinking. Turn it off and give buttons our own subtle press feedback instead. */
+  -webkit-tap-highlight-color: transparent;
+}
+/* No double-tap-to-zoom delay on controls, so taps respond immediately. */
+button, a, [role="button"], input, select, textarea, label { touch-action: manipulation; }
+button:not(:disabled):active, a:active, [role="button"]:active { filter: brightness(0.92); }
 
 body {
   margin: 0;

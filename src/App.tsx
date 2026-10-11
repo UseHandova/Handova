@@ -133,19 +133,17 @@ function MainApp({ account, address, role, tab, navigate, pendingUsdc, onSignOut
         role={role} onSwitchRole={() => { rememberRole(null); navigate('/'); }}
         onOpenAdmin={() => setShowAdmin(true)} />
       <ChainStatusBanner />
-      <AnimatePresence mode="wait">
-        <motion.div key={role === 'tenant' ? tab : role} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
-          {role === 'landlord' ? (
-            <LandlordDashboard account={account} />
-          ) : (
-            <>
-              {tab === 'browse' && <BrowseListings account={account} />}
-              {tab === 'leases' && <MyLeases account={account} address={address} />}
-            </>
-          )}
-        </motion.div>
-      </AnimatePresence>
+      {/* Screen changes slide in slightly but never fade the page to blank — that blank frame looked like a blink on phones. */}
+      <motion.div key={role === 'tenant' ? tab : role} initial={{ y: 8 }} animate={{ y: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
+        {role === 'landlord' ? (
+          <LandlordDashboard account={account} />
+        ) : (
+          <>
+            {tab === 'browse' && <BrowseListings account={account} />}
+            {tab === 'leases' && <MyLeases account={account} address={address} />}
+          </>
+        )}
+      </motion.div>
       {role === 'tenant' && <TabBar active={tab} onChange={t => navigate(t === 'leases' ? '/tenant/leases' : '/tenant')} role={role} />}
 
       {/* Onboarding walkthrough */}
