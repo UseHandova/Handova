@@ -4,6 +4,7 @@
  *   /tenant            browse homes          /tenant/leases       my leases
  *   /landlord          your properties       /landlord/new        list a property
  *   /landlord/whatsapp list by WhatsApp      /landlord/insights   insights
+ *   /landlord/rented   homes rented out (next rent due)
  * Reload, back/forward and shared links all land on the right screen.
  */
 

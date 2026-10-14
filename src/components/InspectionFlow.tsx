@@ -1,7 +1,7 @@
 /**
  * InspectionFlow — the tenant's path from "I like this home" to "my rent is in escrow".
  *
- *   1. Chat     agree with the landlord on WhatsApp (optional — skip if already agreed)
+ *   1. Chat     agree with the landlord in Handova's chat (optional — skip if already agreed)
  *   2. Book     pick a time; the landlord approves, suggests another time, or declines
  *   3. Inspect  visit; afterwards both sides confirm it happened
  *   4. Pay      review what you're paying for, then pay into escrow
@@ -31,7 +31,7 @@ import SlotPicker from '@/components/SlotPicker';
 import { openChat } from '@/lib/chat';
 import { ApiError } from '@/lib/api';
 import {
-  OUTCOME_OPENS_MS, calendarLink, formatSlot, inspectionFor, prettyPhone, saveContact, savedContact, useInspections, waLink,
+  OUTCOME_OPENS_MS, WHATSAPP_CHAT, calendarLink, formatSlot, inspectionFor, prettyPhone, saveContact, savedContact, useInspections, waLink,
   type Inspection,
 } from '@/lib/inspections';
 
@@ -89,7 +89,7 @@ function WhenWhere({ i, where }: { i: Inspection; where: string }) {
 }
 
 function ChatLandlord({ phone, text, label = 'Message landlord on WhatsApp' }: { phone: string; text: string; label?: string }) {
-  if (!phone) return null;
+  if (!phone || !WHATSAPP_CHAT) return null;
   return (
     <a href={waLink(phone, text)} target="_blank" rel="noreferrer" className={btn} style={secondary}>
       <MessageCircle className="w-4 h-4" /> {label}
@@ -246,7 +246,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                     <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Ask your questions and agree that you'll come and see it. Then come back here to book the visit, so you're both on the same page.</p>
                   </div>
                   <button onClick={() => chatInApp()} className={btn} style={primary}><MessagesSquare className="w-4 h-4" /> Message the landlord</button>
-                  {landlordPhone && <button onClick={openWhatsApp} className={btn} style={secondary}><MessageCircle className="w-4 h-4" /> Chat on WhatsApp instead</button>}
+                  {WHATSAPP_CHAT && landlordPhone && <button onClick={openWhatsApp} className={btn} style={secondary}><MessageCircle className="w-4 h-4" /> Chat on WhatsApp instead</button>}
                   <button onClick={() => setChatted(true)} className={btn} style={secondary}>We've already agreed — book a visit</button>
                   <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>Never pay anyone before you've inspected the home. Handova never asks for an inspection fee.</p>
                 </>)}

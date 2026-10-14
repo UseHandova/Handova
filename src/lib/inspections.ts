@@ -83,6 +83,13 @@ export function calendarLink(title: string, ms: number, details: string) {
   return `https://calendar.google.com/calendar/render?${p.toString()}`;
 }
 
+/**
+ * Tenant ↔ landlord WhatsApp chat buttons. Off for now: every conversation happens in Handova's in-app chat, so both
+ * sides (and, in a dispute, the record) see the same thing. Set to true to bring the WhatsApp buttons back if we need
+ * them while investigating an issue.
+ */
+export const WHATSAPP_CHAT = false;
+
 export const waLink = (phone: string, text: string) => `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
 
 /** 2348031234567 → 0803 123 4567 */

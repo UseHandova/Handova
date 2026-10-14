@@ -24,6 +24,9 @@ import { bundlerClient } from '@/lib/wallet';
 import { encodeFunctionData } from 'viem';
 import { toast } from 'sonner';
 import WhatsAppInbox from '@/components/WhatsAppInbox';
+import RentedOut from '@/components/RentedOut';
+import ListingSocialProof from '@/components/ListingSocialProof';
+import { useListingStats } from '@/lib/listing-stats';
 import LangSelector from '@/components/LangSelector';
 import { geocodeAddress, PinDropMap } from '@/components/PropertyMap';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -47,7 +50,7 @@ interface Props { account: SmartAccount; }
 /** A photo/video in the form: either a new local file to upload, or an already-uploaded URL (editing, WhatsApp draft). */
 type MediaItem = { id: string; type: 'image' | 'video'; url: string; name: string; file?: File };
 type View = 'home' | 'new-listing';
-type DashTab = 'listings' | 'whatsapp' | 'stats';
+type DashTab = 'listings' | 'rented' | 'whatsapp' | 'stats';
 
 interface MockListing {
   id: string;
@@ -120,9 +123,9 @@ export default function LandlordDashboard({ account }: Props) {
   const editingId = editMatch ? BigInt(editMatch[1]) : null;
   const view: View = path === '/landlord/new' || editingId !== null ? 'new-listing' : 'home';
   const draftCode = view === 'new-listing' && !editingId ? (new URLSearchParams(window.location.search).get('draft') ?? '') : '';
-  const dashTab: DashTab = path === '/landlord/whatsapp' ? 'whatsapp' : path === '/landlord/insights' ? 'stats' : 'listings';
+  const dashTab: DashTab = path === '/landlord/whatsapp' ? 'whatsapp' : path === '/landlord/insights' ? 'stats' : path === '/landlord/rented' ? 'rented' : 'listings';
   const setView = (v: View) => navigate(v === 'new-listing' ? '/landlord/new' : '/landlord');
-  const setDashTab = (t: DashTab) => navigate(t === 'whatsapp' ? '/landlord/whatsapp' : t === 'stats' ? '/landlord/insights' : '/landlord');
+  const setDashTab = (t: DashTab) => navigate(t === 'whatsapp' ? '/landlord/whatsapp' : t === 'stats' ? '/landlord/insights' : t === 'rented' ? '/landlord/rented' : '/landlord');
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const { t } = useLang();
@@ -245,6 +248,7 @@ export default function LandlordDashboard({ account }: Props) {
       }));
   }, [chain.data, account.address]);
   const ownership = useMyOwnership(account);
+  const statsFor = useListingStats();
   const [showVerification, setShowVerification] = useState(!!diditReturn);
   const [showBoost, setShowBoost] = useState<string | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
@@ -1044,6 +1048,7 @@ export default function LandlordDashboard({ account }: Props) {
       <div className="flex gap-6 mb-5" style={{ borderBottom: '1px solid var(--border)' }}>
         {([
           { id: 'listings' as DashTab, label: u('tab_properties') },
+          { id: 'rented' as DashTab, label: `${u('tab_rented')}${rentedCount > 0 ? ` (${rentedCount})` : ''}` },
           { id: 'whatsapp' as DashTab, label: u('tab_whatsapp') },
           { id: 'stats' as DashTab, label: u('tab_insights') },
         ]).map(tab => (
@@ -1096,6 +1101,7 @@ export default function LandlordDashboard({ account }: Props) {
                         <p className="text-sm mt-0.5 tabular-nums" style={{ color: 'var(--muted)' }}>
                           {l.rooms} bed · <span style={{ color: 'var(--ink)' }} className="font-semibold">{formatNaira(l.rentNgn / USDC_TO_NGN)}</span>/yr
                         </p>
+                        {!l.escrow && <ListingSocialProof stats={statsFor(l.id)} variant="compact" />}
                       </div>
                       <OwnershipRow account={account} listingId={l.id} address={l.address} mine={ownership} />
                       {!l.escrow && (
@@ -1122,6 +1128,14 @@ export default function LandlordDashboard({ account }: Props) {
                 })}
               </div>
             )}
+          </motion.div>
+        )}
+
+        {dashTab === 'rented' && (
+          <motion.div key="rented" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            {chain.isLoading || (chain.isError && !chain.data)
+              ? <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
+              : <RentedOut account={account} listings={listings} now={now} />}
           </motion.div>
         )}
 

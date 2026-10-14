@@ -39,7 +39,7 @@ const en = {
   listed: 'Listed', rented: 'Rented', rent_per_year: 'Rent from tenants / yr', ready_withdraw: 'Ready to withdraw', withdraw: 'Withdraw',
   needs_attention: 'Needs your attention', identity_verified: 'Identity verified',
   verify_cta: 'Verify your identity — tenants trust verified landlords',
-  tab_properties: 'Properties', tab_whatsapp: 'List by WhatsApp', tab_insights: 'Insights',
+  tab_properties: 'Properties', tab_rented: 'Rented out', tab_whatsapp: 'List by WhatsApp', tab_insights: 'Insights',
   edit: 'Edit', delete: 'Delete', no_properties: 'No properties yet',
   // Leases
   your_leases: 'Your leases', leases_sub: 'Your money stays in escrow until each step is done. Nothing goes to the landlord before you move in.',
@@ -81,7 +81,7 @@ const pcm: Partial<Record<UiKey, string>> = {
   listed: 'Listed', rented: 'Don rent', rent_per_year: 'Rent from tenant / year', ready_withdraw: 'Ready to withdraw', withdraw: 'Withdraw',
   needs_attention: 'E need your attention', identity_verified: 'You don verify',
   verify_cta: 'Verify yourself — tenant dey trust verified landlord',
-  tab_properties: 'Houses', tab_whatsapp: 'List with WhatsApp', tab_insights: 'Insights',
+  tab_properties: 'Houses', tab_rented: 'Don rent', tab_whatsapp: 'List with WhatsApp', tab_insights: 'Insights',
   edit: 'Edit', delete: 'Delete', no_properties: 'You never list any house',
   your_leases: 'Your houses wey you rent', leases_sub: 'Your money go stay for escrow till each step finish. Landlord no go collect anything before you pack enter.',
   step_paid: 'Don pay', step_keys: 'Key', step_moved_in: 'Don pack enter', step_moved_out: 'Don pack comot', step_settled: 'E don finish',
@@ -94,6 +94,7 @@ const pcm: Partial<Record<UiKey, string>> = {
 };
 
 const yo: Partial<Record<UiKey, string>> = {
+  tab_rented: 'Ilé tí a ti yá',
   browse_title: 'Ilé ní Èkó, tààrà láti ọ̀dọ̀ onílé',
   browse_sub: 'kò sí owó agent · owó ilé wà ní escrow títí o fi wọlé',
   homes: 'ilé', home: 'ilé', sample: 'àpẹẹrẹ',
@@ -116,6 +117,7 @@ const yo: Partial<Record<UiKey, string>> = {
 };
 
 const ig: Partial<Record<UiKey, string>> = {
+  tab_rented: 'Ụlọ e gbazitere',
   browse_title: 'Ụlọ na Lagos, site n\'aka nwe ụlọ',
   browse_sub: 'enweghị ụgwọ agent · ego ụlọ nọ na escrow ruo mgbe ị banyere',
   filters: 'Nhọrọ', per_year_btn: 'Kwa afọ', per_month_btn: 'Kwa ọnwa',
@@ -130,6 +132,7 @@ const ig: Partial<Record<UiKey, string>> = {
 };
 
 const ha: Partial<Record<UiKey, string>> = {
+  tab_rented: 'An bayar da haya',
   browse_title: 'Gidaje a Legas, kai tsaye daga masu gida',
   browse_sub: 'babu kuɗin dillali · kuɗin haya na ajiye a escrow har ka shiga',
   filters: 'Zaɓuɓɓuka', per_year_btn: 'A shekara', per_month_btn: 'A wata',

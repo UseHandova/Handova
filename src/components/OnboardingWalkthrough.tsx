@@ -39,7 +39,7 @@ export default function OnboardingWalkthrough({ role, onDone }: Props) {
 
   const tenantSteps: Step[] = [
     { icon: Search, iconBg: 'var(--accent)', title: t('onboarding_step1'), body: 'Filter by area, property type, and furnishing. All 50+ Lagos areas covered.' },
-    { icon: BadgeCheck, iconBg: 'var(--accent)', title: t('onboarding_step2'), body: 'Contact the landlord via WhatsApp, visit the property, and confirm you are satisfied before any money moves.' },
+    { icon: BadgeCheck, iconBg: 'var(--accent)', title: t('onboarding_step2'), body: 'Chat with the landlord in Handova, visit the property, and confirm you are satisfied before any money moves.' },
     { icon: ShieldCheck, iconBg: 'var(--accent)', title: t('onboarding_step3'), body: 'Rent is held in a smart contract. Released to the landlord only after you confirm move-in. Your deposit is also protected.' },
   ];
 

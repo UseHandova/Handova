@@ -13,7 +13,7 @@ import { openChat } from '@/lib/chat';
 import { useCashPayments } from '@/lib/cash';
 import SlotPicker from '@/components/SlotPicker';
 import { PaymentMethodPicker } from '@/components/CashPayment';
-import { OUTCOME_OPENS_MS, formatSlot, prettyPhone, useInspections, waLink, type Inspection } from '@/lib/inspections';
+import { OUTCOME_OPENS_MS, WHATSAPP_CHAT, formatSlot, prettyPhone, useInspections, waLink, type Inspection } from '@/lib/inspections';
 
 const DECLINE_REASONS = ['That time doesn\'t work', 'The property is already taken', 'I\'m travelling — please pick another week'];
 
@@ -85,7 +85,7 @@ function Item({ i, ins, cashSent }: { i: Inspection; ins: ReturnType<typeof useI
       toast.error(/NotAllowedError|cancel/i.test(msg) ? 'Sign-in was cancelled.' : msg);
     } finally { setBusy(null); }
   }
-  const told = (r: Inspection) => (r.notified ? ' We sent them a WhatsApp message too.' : ' They\'ll see it in Handova.');
+  const told = (r: Inspection) => (r.notified ? ' We let them know too.' : ' They\'ll see it in Handova.');
   const btn = 'h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50';
   const ghost = { background: 'var(--popover)', color: 'var(--ink)', border: '1px solid var(--border)' };
   const input = { background: 'var(--popover)', border: '1px solid var(--border)', color: 'var(--ink)' };
@@ -109,7 +109,7 @@ function Item({ i, ins, cashSent }: { i: Inspection; ins: ReturnType<typeof useI
         {i.tenantPhone && (
           <>
             <a href={`tel:+${i.tenantPhone}`} aria-label={`Call ${i.tenantName}`} title={prettyPhone(i.tenantPhone)} className="w-9 h-9 rounded-full flex items-center justify-center" style={ghost}><Phone className="w-4 h-4" /></a>
-            <a href={waLink(i.tenantPhone, `Hello ${i.tenantName.split(' ')[0]}, this is the landlord for ${i.place} on Handova.`)} target="_blank" rel="noreferrer" aria-label={`WhatsApp ${i.tenantName}`} className="w-9 h-9 rounded-full flex items-center justify-center" style={ghost}><MessageCircle className="w-4 h-4" /></a>
+            {WHATSAPP_CHAT && <a href={waLink(i.tenantPhone, `Hello ${i.tenantName.split(' ')[0]}, this is the landlord for ${i.place} on Handova.`)} target="_blank" rel="noreferrer" aria-label={`WhatsApp ${i.tenantName}`} className="w-9 h-9 rounded-full flex items-center justify-center" style={ghost}><MessageCircle className="w-4 h-4" /></a>}
           </>
         )}
         </div>
