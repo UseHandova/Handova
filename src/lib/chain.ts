@@ -76,10 +76,22 @@ export interface ChainState {
 const usdc = (raw: bigint) => Number(formatUnits(raw, 6));
 const ms = (secs: bigint) => Number(secs) * 1000;
 
+/** Media in the compact on-chain form: file names in our media store (or full URLs), type from the extension. */
+const VIDEO_EXT = /\.(mp4|mov|webm)$/i;
+export const mediaFromNames = (names: unknown[]): NonNullable<ListingMeta['media']> => names
+  .filter((n): n is string => typeof n === 'string' && n.length > 0)
+  .map(n => ({ type: VIDEO_EXT.test(n) ? 'video' : 'image', url: /^(https?:)?\//.test(n) ? n : `/api/media/${n}` }));
+/** Our own uploads go on-chain as just the file name (about half the bytes, so half the gas, of {type,url}). */
+export const mediaToNames = (media: { url: string }[]) => media.map(m => (m.url.startsWith('/api/media/') ? m.url.slice('/api/media/'.length) : m.url));
+
 function parseMeta(uri: string): ListingMeta {
   try {
     const parsed: unknown = JSON.parse(uri);
-    return parsed && typeof parsed === 'object' ? (parsed) : {};
+    if (!parsed || typeof parsed !== 'object') return {};
+    const meta = parsed as ListingMeta & { m?: unknown };
+    // Listings store media either as `m: ["abc.jpg", …]` (compact, current) or `media: [{type,url}]` (older).
+    if (Array.isArray(meta.m)) { const { m, ...rest } = meta; return { ...rest, media: mediaFromNames(m) }; }
+    return meta;
   } catch {
     return { description: uri };
   }

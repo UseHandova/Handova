@@ -16,7 +16,7 @@ import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
 import {
   sameAddress, sendEscrowTx, useChainState, useNow, usePendingWithdrawal, useRefreshChain, useVerifiedAt,
-  MOVE_IN_WINDOW_MS, DEPOSIT_REVIEW_MS, type ChainEscrow, assertCanPayGas, sendUserOp, txErrorText } from '@/lib/chain';
+  MOVE_IN_WINDOW_MS, DEPOSIT_REVIEW_MS, type ChainEscrow, assertCanPayGas, sendUserOp, txErrorText, mediaToNames } from '@/lib/chain';
 import { EscrowStatus } from '@/lib/contracts';
 import LandlordEscrowPanel from '@/components/LandlordEscrowPanel';
 import { encodeFunctionData } from 'viem';
@@ -301,33 +301,45 @@ export default function LandlordDashboard({ account }: Props) {
     setGeoStatus(result ? 'valid' : 'invalid');
   }
 
-  const readFile = (file: File): Promise<string> =>
-    new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result as string);
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
+  // Same limits as the server (server/media.ts): checked here first, so a huge video is refused at once
+  // with a clear reason instead of being read into memory and failing at upload.
+  const MAX_IMAGE_MB = 10, MAX_VIDEO_MB = 60, MAX_ITEMS = 10;
+  const mb = (bytes: number) => (bytes / 1024 / 1024 >= 100 ? Math.round(bytes / 1024 / 1024) : Math.round(bytes / 1024 / 1024 * 10) / 10);
 
-  const addFiles = useCallback(async (files: FileList | File[]) => {
-    const arr = Array.from(files).slice(0, 10 - media.length);
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const all = Array.from(files);
+    const room = MAX_ITEMS - media.length;
     const items: MediaItem[] = [];
-    for (const f of arr) {
-      if (!f.type.startsWith('image/') && !f.type.startsWith('video/')) continue;
-      const url = await readFile(f);
+    const problems: string[] = [];
+    for (const f of all) {
+      const isVideo = f.type.startsWith('video/'), isImage = f.type.startsWith('image/');
+      if (!isVideo && !isImage) { problems.push(`"${f.name}" isn't a photo or video.`); continue; }
+      const limit = isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB;
+      if (f.size > limit * 1024 * 1024) {
+        problems.push(isVideo
+          ? `"${f.name}" is ${mb(f.size)} MB. Videos must be under ${MAX_VIDEO_MB} MB: trim it or record a shorter clip (about 1 minute).`
+          : `"${f.name}" is ${mb(f.size)} MB. Photos must be under ${MAX_IMAGE_MB} MB.`);
+        continue;
+      }
+      if (items.length >= room) { problems.push(`A listing can have up to ${MAX_ITEMS} photos and videos, so some files weren't added.`); break; }
       items.push({
         id: Math.random().toString(36).slice(2),
-        type: f.type.startsWith('video/') ? 'video' : 'image',
-        url,
+        type: isVideo ? 'video' : 'image',
+        url: URL.createObjectURL(f), // preview without loading the whole file into memory
         name: f.name,
         file: f,
       });
     }
-    setMedia(prev => [...prev, ...items]);
+    if (items.length) setMedia(prev => [...prev, ...items]);
+    if (problems.length) toast.error(problems.join(' '), { duration: 9_000 });
   }, [media.length]);
 
   function removeMedia(id: string) {
-    setMedia(prev => prev.filter(m => m.id !== id));
+    setMedia(prev => {
+      const gone = prev.find(m => m.id === id);
+      if (gone?.url.startsWith('blob:')) URL.revokeObjectURL(gone.url);
+      return prev.filter(m => m.id !== id);
+    });
   }
 
   function toggleAmenity(a: string) {
@@ -378,8 +390,9 @@ export default function LandlordDashboard({ account }: Props) {
         furnishing: form.furnishing,
         description: form.description,
         amenities: form.amenities,
-        media: uploaded,
-        ...(pin && { lat: pin.lat, lng: pin.lng }),
+        // Compact on-chain form (file names only) and ~1 m precision on the pin: fewer bytes, less gas.
+        m: mediaToNames(uploaded),
+        ...(pin && { lat: Math.round(pin.lat * 1e5) / 1e5, lng: Math.round(pin.lng * 1e5) / 1e5 }),
         ...(normalisePhone(form.phone) && { phone: normalisePhone(form.phone) }),
       });
 
@@ -524,7 +537,7 @@ export default function LandlordDashboard({ account }: Props) {
                 }}
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
-                onDrop={e => { e.preventDefault(); setDragOver(false); void addFiles(e.dataTransfer.files); }}
+                onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
               >
                 <input
                   ref={fileInputRef}
@@ -532,7 +545,7 @@ export default function LandlordDashboard({ account }: Props) {
                   accept="image/*,video/*"
                   multiple
                   className="absolute inset-0 opacity-0 cursor-pointer"
-                  onChange={e => { if (e.target.files) void addFiles(e.target.files); }}
+                  onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }}
                 />
                 {media.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 gap-3">
