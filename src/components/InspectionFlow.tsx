@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { CHAIN_ID, USE_PAYMASTER } from '@/lib/network';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, MessagesSquare, ShieldCheck, X, XCircle, AlertTriangle,
@@ -40,7 +41,7 @@ interface Props {
   onClose: () => void;
 }
 
-const USDC_ADDR = (getUsdc(5042002)?.address ?? '0x3600000000000000000000000000000000000000') as Hex;
+const USDC_ADDR = (getUsdc(CHAIN_ID)?.address ?? '0x3600000000000000000000000000000000000000') as Hex;
 const STEPS = [
   { label: 'Chat', icon: MessageCircle },
   { label: 'Book', icon: CalendarCheck },
@@ -174,21 +175,21 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
     if (!ESCROW_ADDRESS) { toast.error('Contract not deployed — set VITE_ESCROW_ADDRESS first.'); return; }
     setBusy('pay');
     try {
-      const total = parseAmount(5042002, (listing.rentUsdc + listing.depositUsdc).toString());
+      const total = parseAmount(CHAIN_ID, (listing.rentUsdc + listing.depositUsdc).toString());
       const hash = await bundlerClient.sendUserOperation({
         account,
         calls: [
           { to: USDC_ADDR, data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: 'approve', args: [ESCROW_ADDRESS, total.raw] }), value: 0n },
           { to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'depositRent', args: [listing.id] }), value: 0n },
         ],
-        paymaster: true,
+        paymaster: USE_PAYMASTER,
       });
       await bundlerClient.waitForUserOperationReceipt({ hash });
       void refreshChain();
       setPaid(true);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(msg.includes('NotAllowedError') ? 'Payment cancelled — nothing was charged.' : /insufficient|exceeds balance/i.test(msg)
+      toast.error(msg.includes('NotAllowedError') ? 'Payment cancelled — nothing was charged.' : /insufficient|exceeds balance|AA21|prefund/i.test(msg)
         ? `Not enough USDC. You need ${formatUsdc(listing.rentUsdc + listing.depositUsdc)} in your wallet.` : 'Payment failed — nothing was charged. Please try again.');
     } finally { setBusy(null); }
   }

@@ -12,6 +12,7 @@ import { useSavings } from '@/lib/savings';
 import { planMath, type Frequency } from '@/lib/savings-math';
 import { savedContact } from '@/lib/inspections';
 import { useNow } from '@/lib/chain';
+import { gasProblem } from '@/lib/network';
 
 const fmt = (n: number) => `₦${Math.round(n).toLocaleString('en-NG')}`;
 const fmtDate = (ms: number) => new Date(ms).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -21,6 +22,7 @@ const btn = 'h-11 px-4 rounded-xl text-sm font-semibold flex items-center justif
 const errText = (e: unknown) => {
   const m = e instanceof Error ? e.message : String(e);
   if (/NotAllowedError|cancel/i.test(m)) return 'Cancelled — nothing was moved.';
+  const gas = gasProblem(e); if (gas && !/transfer amount/i.test(m)) return gas;
   if (/insufficient|exceeds balance|transfer amount/i.test(m)) return 'Not enough USDC in your wallet for that amount.';
   return m.length > 140 ? 'That didn\'t go through. Nothing was moved — please try again.' : m;
 };

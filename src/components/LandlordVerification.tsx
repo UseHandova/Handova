@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react';
+import { CHAIN_ID } from '@/lib/network';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BadgeCheck, X, Loader2, AlertCircle, Shield, Camera, ExternalLink } from 'lucide-react';
@@ -189,7 +190,7 @@ export default function LandlordVerification({ account, onClose, diditSessionId 
                     Tenants see the badge on all your listings.
                   </p>
                   {txHash && (
-                    <a href={buildTxExplorerUrl(5042002, txHash)} target="_blank" rel="noopener noreferrer"
+                    <a href={buildTxExplorerUrl(CHAIN_ID, txHash)} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-xs mt-2" style={{ color: 'var(--accent)' }}>
                       View onchain record <ExternalLink className="w-3 h-3" />
                     </a>

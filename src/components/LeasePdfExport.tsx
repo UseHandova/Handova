@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { CHAIN_ID, NETWORK_LABEL } from '@/lib/network';
 import { motion } from 'framer-motion';
 import { FileText, Download, Loader2, ExternalLink } from 'lucide-react';
 import { useLang } from '@/lib/LangContext';
@@ -80,7 +81,7 @@ export default function LeasePdfExport({ lease, onClose }: Props) {
 <div class="section">
   <h2>Blockchain Record</h2>
   <div class="row"><span class="label">Escrow ID</span><span class="value">#${lease.escrowId}</span></div>
-  <div class="row"><span class="label">Chain</span><span class="value">Arc Testnet (Chain ID: 5042002)</span></div>
+  <div class="row"><span class="label">Chain</span><span class="value">${NETWORK_LABEL} (Chain ID: ${CHAIN_ID})</span></div>
   ${lease.txHash ? `<div class="row"><span class="label">Transaction Hash</span></div><div class="hash">${lease.txHash}</div>` : ''}
 </div>
 
@@ -101,7 +102,7 @@ export default function LeasePdfExport({ lease, onClose }: Props) {
     }
   }
 
-  const explorerUrl = lease.txHash ? buildTxExplorerUrl(5042002, lease.txHash) : null;
+  const explorerUrl = lease.txHash ? buildTxExplorerUrl(CHAIN_ID, lease.txHash) : null;
 
   return (
     <div className="rounded-3xl p-5 space-y-4"

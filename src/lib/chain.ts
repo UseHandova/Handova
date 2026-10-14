@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createPublicClient, encodeFunctionData, formatUnits, type Address } from 'viem';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { arcTestnet } from 'viem/chains';
+import { CHAIN, USE_PAYMASTER, gasProblem } from '@/lib/network';
 import { arcTransport } from '@/lib/arc-rpc';
 import { ESCROW_ABI, ESCROW_ADDRESS, EscrowStatus } from '@/lib/contracts';
 import { bundlerClient } from '@/lib/wallet';
@@ -17,7 +17,7 @@ export const MOVE_IN_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 export const DEPOSIT_REVIEW_MS = 7 * 24 * 60 * 60 * 1000;
 export const DISPUTE_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000;
 
-const readClient = createPublicClient({ chain: arcTestnet, transport: arcTransport(import.meta.env.VITE_ARC_RPC_URL as string | undefined) });
+const readClient = createPublicClient({ chain: CHAIN, transport: arcTransport(import.meta.env.VITE_ARC_RPC_URL as string | undefined) });
 const escrowContract = { address: ESCROW_ADDRESS, abi: ESCROW_ABI } as const;
 
 /** Free-form metadata a landlord stores with a listing (JSON in metadataUri). */
@@ -204,12 +204,15 @@ type EscrowWrite =
 
 /** Send one escrow call as a gasless user operation and wait for it to land. */
 export async function sendEscrowTx(account: SmartAccount, call: EscrowWrite) {
+  try { return await sendEscrowTxRaw(account, call); } catch (e) { const gas = gasProblem(e); throw gas ? new Error(gas) : e; }
+}
+async function sendEscrowTxRaw(account: SmartAccount, call: EscrowWrite) {
   if (!ESCROW_ADDRESS) throw new Error('Contract not deployed — set VITE_ESCROW_ADDRESS.');
   const data = encodeFunctionData({ abi: ESCROW_ABI, ...call });
   const hash = await bundlerClient.sendUserOperation({
     account,
     calls: [{ to: ESCROW_ADDRESS, data, value: 0n }],
-    paymaster: true,
+    paymaster: USE_PAYMASTER,
   });
   return bundlerClient.waitForUserOperationReceipt({ hash });
 }

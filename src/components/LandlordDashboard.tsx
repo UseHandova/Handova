@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { CHAIN_ID, USE_PAYMASTER, gasProblem } from '@/lib/network';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -346,8 +347,8 @@ export default function LandlordDashboard({ account }: Props) {
     }
     setLoading(true);
     try {
-      const rentRaw = parseAmount(5042002, rentUsdc.toFixed(6)).raw;
-      const depositRaw = parseAmount(5042002, depositUsdc.toFixed(6)).raw;
+      const rentRaw = parseAmount(CHAIN_ID, rentUsdc.toFixed(6)).raw;
+      const depositRaw = parseAmount(CHAIN_ID, depositUsdc.toFixed(6)).raw;
 
       // Upload new photos/videos first (already-uploaded ones keep their URL); the listing stores only URLs.
       const uploaded: { type: 'image' | 'video'; url: string }[] = [];
@@ -386,7 +387,7 @@ export default function LandlordDashboard({ account }: Props) {
       if (editingId !== null) {
         calls.push({ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'deactivateListing', args: [editingId] }), value: 0n });
       }
-      const hash = await bundlerClient.sendUserOperation({ account, calls, paymaster: true });
+      const hash = await bundlerClient.sendUserOperation({ account, calls, paymaster: USE_PAYMASTER });
       await bundlerClient.waitForUserOperationReceipt({ hash });
       if (draftCode) await fetch(`/api/bot/draft/${draftCode}/published`, { method: 'POST' }).catch(() => undefined);
 
@@ -396,7 +397,7 @@ export default function LandlordDashboard({ account }: Props) {
       toast.success(editingId !== null ? 'Changes saved.' : 'Property listed onchain!');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes('NotAllowedError')) toast.error(msg.startsWith('Could not upload') || msg.includes('under') ? msg : editingId !== null ? 'Could not save changes. If a tenant has already paid, the listing can no longer be edited.' : 'Could not list property.');
+      if (!msg.includes('NotAllowedError')) toast.error(gasProblem(e) ?? (msg.startsWith('Could not upload') || msg.includes('under') ? msg : editingId !== null ? 'Could not save changes. If a tenant has already paid, the listing can no longer be edited.' : 'Could not list property.'));
     } finally {
       setLoading(false);
     }
@@ -911,7 +912,7 @@ export default function LandlordDashboard({ account }: Props) {
       const hash = await bundlerClient.sendUserOperation({
         account,
         calls: [{ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'deactivateListing', args: [id] }), value: 0n }],
-        paymaster: true,
+        paymaster: USE_PAYMASTER,
       });
       await bundlerClient.waitForUserOperationReceipt({ hash });
       await refreshChain();

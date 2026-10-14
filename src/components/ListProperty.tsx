@@ -4,6 +4,7 @@
  */
 
 import { useState } from 'react';
+import { CHAIN_ID, USE_PAYMASTER } from '@/lib/network';
 import { motion } from 'framer-motion';
 import { MapPin, Home, Info, Loader2, Check } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
@@ -45,8 +46,8 @@ export default function ListProperty({ account }: Props) {
     }
     setLoading(true);
     try {
-      const rentRaw = parseAmount(5042002, rentUsdc.toFixed(6)).raw;
-      const depositRaw = parseAmount(5042002, depositUsdc.toFixed(6)).raw;
+      const rentRaw = parseAmount(CHAIN_ID, rentUsdc.toFixed(6)).raw;
+      const depositRaw = parseAmount(CHAIN_ID, depositUsdc.toFixed(6)).raw;
       const metadata = JSON.stringify({
         location: form.location,
         rooms: parseInt(form.rooms),
@@ -62,7 +63,7 @@ export default function ListProperty({ account }: Props) {
       const hash = await bundlerClient.sendUserOperation({
         account,
         calls: [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }],
-        paymaster: true,
+        paymaster: USE_PAYMASTER,
       });
 
       toast.promise(

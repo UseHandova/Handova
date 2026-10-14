@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createPublicClient, createWalletClient, isAddress, isHex, type Address, type Chain, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { arcTestnet } from 'viem/chains';
+import { CHAIN } from '../src/lib/network';
 import { arcTransport } from '../src/lib/arc-rpc';
 
 const ESCROW_VERIFY_ABI = [
@@ -89,7 +89,7 @@ const challengeMessage = (address: Address, nonce: string, issuedAt: string) =>
   `Handova identity verification\n\nI confirm I own this Handova account and consent to my identity being checked.\n\nAccount: ${address}\nNonce: ${nonce}\nIssued: ${issuedAt}`;
 
 export function mountVerification(app: Express, config: VerificationConfig = configFromEnv()) {
-  const chain = config.chain ?? arcTestnet;
+  const chain = config.chain ?? CHAIN;
   const publicClient = createPublicClient({ chain, transport: arcTransport(config.rpcUrl || undefined) });
   const verifier = config.verifierPrivateKey ? privateKeyToAccount(config.verifierPrivateKey) : null;
   const walletClient = verifier ? createWalletClient({ account: verifier, chain, transport: arcTransport(config.rpcUrl || undefined) }) : null;

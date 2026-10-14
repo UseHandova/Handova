@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { createPublicClient, encodeFunctionData, parseAbi, type Address } from 'viem';
 import { arcTransport } from '@/lib/arc-rpc';
-import { arcTestnet } from 'viem/chains';
+import { CHAIN, USE_PAYMASTER } from '@/lib/network';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { api, hasSession } from '@/lib/api';
 import { bundlerClient } from '@/lib/wallet';
@@ -21,7 +21,7 @@ const VAULT_ABI = parseAbi([
   'function withdraw(uint256 amount, address to)',
 ]);
 const ERC20 = parseAbi(['function approve(address,uint256) returns (bool)', 'function balanceOf(address) view returns (uint256)']);
-const read = createPublicClient({ chain: arcTestnet, transport: arcTransport(import.meta.env.VITE_ARC_RPC_URL as string | undefined) });
+const read = createPublicClient({ chain: CHAIN, transport: arcTransport(import.meta.env.VITE_ARC_RPC_URL as string | undefined) });
 
 export interface SavingsPlan { goalNgn: number; startAt: number; dueAt: number; frequency: Frequency; day: number; label: string; reminders: boolean }
 
@@ -53,7 +53,7 @@ export function useSavings(account: SmartAccount) {
   });
 
   async function send(calls: { to: Address; data: `0x${string}` }[]) {
-    const hash = await bundlerClient.sendUserOperation({ account, calls: calls.map(c => ({ ...c, value: 0n })), paymaster: true });
+    const hash = await bundlerClient.sendUserOperation({ account, calls: calls.map(c => ({ ...c, value: 0n })), paymaster: USE_PAYMASTER });
     await bundlerClient.waitForUserOperationReceipt({ hash });
     await qc.invalidateQueries({ queryKey: balKey });
   }

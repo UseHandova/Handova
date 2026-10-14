@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Home, Shield, Fingerprint, Loader2, AlertCircle, ArrowLeft, CheckCircle2, Phone } from 'lucide-react';
 import { registerPasskey, loginPasskey, restoreSession } from '@/lib/wallet';
 import PhoneLogin from '@/components/PhoneLogin';
+import { NETWORK_LABEL, SPONSOR_GAS } from '@/lib/network';
 import ThemeToggle from '@/components/ThemeToggle';
 import LangSelector from '@/components/LangSelector';
 import { useLang } from '@/lib/LangContext';
@@ -317,7 +318,7 @@ export default function AuthGate({ onAuth }: Props) {
 
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
           className="text-center text-xs mt-6" style={{ color: 'var(--subtle)' }}>
-          {t('powered_by')} · <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2">Privacy</a>
+          {t('powered_by').replace('Arc Testnet', NETWORK_LABEL).split(' · ').filter((_, i, all) => SPONSOR_GAS || i < all.length - 1).join(' · ')} · <a href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2">Privacy</a>
         </motion.p>
       </div>
     </div>

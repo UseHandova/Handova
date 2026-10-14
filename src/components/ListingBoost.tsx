@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react';
+import { CHAIN_ID, USE_PAYMASTER } from '@/lib/network';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, X, CheckCircle2, Loader2, TrendingUp, Star } from 'lucide-react';
@@ -33,7 +34,7 @@ interface Props {
   onClose: () => void;
 }
 
-const usdcFact = getUsdc(5042002);
+const usdcFact = getUsdc(CHAIN_ID);
 const USDC_ADDR = (usdcFact?.address ?? '0x3600000000000000000000000000000000000000') as Hex;
 // Platform treasury address — in production this would be a real multisig
 export function useBoosts() {
@@ -64,13 +65,13 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
     if (!treasury) { toast.error('Boosts are not available right now.'); return; }
     setBoosting(true);
     try {
-      const amount = parseAmount(5042002, option.usdcCost.toString());
+      const amount = parseAmount(CHAIN_ID, option.usdcCost.toString());
       // 1. Pay the treasury in USDC (gasless).
       const calldata = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [treasury, amount.raw] });
       const hash = await bundlerClient.sendUserOperation({
         account,
         calls: [{ to: USDC_ADDR, data: calldata, value: 0n }],
-        paymaster: true,
+        paymaster: USE_PAYMASTER,
       });
       const receipt = await bundlerClient.waitForUserOperationReceipt({ hash });
       // 2. The server checks that payment onchain before turning the boost on.
