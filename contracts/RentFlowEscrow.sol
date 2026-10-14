@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -10,7 +12,10 @@ interface IRentFlowNFT {
     function mintLeaseCertificate(uint256 escrowId, address tenant, string calldata tokenUri) external returns (uint256 tokenId);
 }
 
-contract RentFlowEscrow is Ownable, ReentrancyGuard {
+/// @notice Upgradeable (UUPS): deployed behind an ERC1967 proxy, so the address and all listings, escrows and balances
+///         stay the same when the code is improved. Only the owner can upgrade. Storage rule for future versions:
+///         never reorder or remove state variables — only append new ones.
+contract RentFlowEscrow is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     enum EscrowStatus {
@@ -45,7 +50,7 @@ contract RentFlowEscrow is Ownable, ReentrancyGuard {
         uint256 proposedAt;
     }
 
-    IERC20 public immutable usdcToken;
+    IERC20 public usdcToken;
     IRentFlowNFT public nftContract;
     bool private nftContractLocked;
 
@@ -73,6 +78,9 @@ contract RentFlowEscrow is Ownable, ReentrancyGuard {
     mapping(uint256 => uint256) public handoverAt;
     /// @notice When the tenant asked to end the tenancy and started the deposit review (0 = not yet).
     mapping(uint256 => uint256) public endRequestedAt;
+    /// @notice When the tenant moved in (escrow became Active) — the tenancy year, and so the next rent, counts from here.
+    mapping(uint256 => uint256) public movedInAt;
+
 
     error ZeroAddress();
     error InvalidAmount();
@@ -129,12 +137,27 @@ contract RentFlowEscrow is Ownable, ReentrancyGuard {
     event VerifierSet(address indexed verifier);
     event LandlordVerificationChanged(address indexed landlord, bool verified);
 
-    constructor(address usdcToken_) Ownable(msg.sender) {
-        if (usdcToken_ == address(0)) revert ZeroAddress();
-        usdcToken = IERC20(usdcToken_);
-        arbiter = msg.sender;
-        verifier = msg.sender;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
+
+    /// @notice Runs once, through the proxy, at deployment.
+    function initialize(address usdcToken_, address owner_) external initializer {
+        if (usdcToken_ == address(0) || owner_ == address(0)) revert ZeroAddress();
+        __Ownable_init(owner_);
+        __ReentrancyGuard_init();
+        usdcToken = IERC20(usdcToken_);
+        arbiter = owner_;
+        verifier = owner_;
+    }
+
+    /// @notice Version of the code behind the proxy (bumped on each upgrade).
+    function version() external pure virtual returns (string memory) {
+        return "1.0.0";
+    }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     function setVerifier(address verifier_) external onlyOwner {
         if (verifier_ == address(0)) revert ZeroAddress();
@@ -430,6 +453,7 @@ contract RentFlowEscrow is Ownable, ReentrancyGuard {
         escrow.totalHeld -= rentAmountUsdc;
         pendingWithdrawals[listing.landlord] += rentAmountUsdc;
         delete handoverAt[escrowId];
+        movedInAt[escrowId] = block.timestamp;
 
         nftContract.mintLeaseCertificate(escrowId, escrow.tenant, listing.metadataUri);
 

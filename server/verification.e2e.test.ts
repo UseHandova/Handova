@@ -17,6 +17,7 @@ import { createPublicClient, createWalletClient, http, type Address, type Hex } 
 import { generatePrivateKey, privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
 import { mountVerification, type VerificationConfig } from './verification';
+import { deployProxied } from './test-proxy';
 
 const ANVIL_PORT = 8547;
 const RPC = `http://127.0.0.1:${ANVIL_PORT}`;
@@ -87,10 +88,8 @@ beforeAll(async () => {
   await waitFor(() => publicClient.getBlockNumber());
 
   // 2. Deploy the real compiled escrow and hand the verifier role to the backend key
-  const artifact = JSON.parse(readFileSync('contracts/out/RentFlowEscrow.sol/RentFlowEscrow.json', 'utf8')) as { abi: unknown[]; bytecode: { object: Hex } };
   const owner = createWalletClient({ account: privateKeyToAccount(OWNER_KEY), chain: foundry, transport: http(RPC) });
-  const deployHash = await owner.deployContract({ abi: artifact.abi, bytecode: artifact.bytecode.object, args: ['0x0000000000000000000000000000000000000001'] });
-  escrow = (await publicClient.waitForTransactionReceipt({ hash: deployHash })).contractAddress!;
+  escrow = await deployProxied(owner, publicClient, 'RentFlowEscrow', ['0x0000000000000000000000000000000000000001']);
   const setHash = await owner.writeContract({ address: escrow, abi: ESCROW_ABI, functionName: 'setVerifier', args: [privateKeyToAccount(VERIFIER_KEY).address] });
   await publicClient.waitForTransactionReceipt({ hash: setHash });
 

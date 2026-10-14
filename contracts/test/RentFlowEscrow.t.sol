@@ -5,6 +5,16 @@ import {Test} from "forge-std/Test.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {RentFlowEscrow} from "../RentFlowEscrow.sol";
 import {RentFlowNFT} from "../RentFlowNFT.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+
+/// A next version of the escrow, for the upgrade tests.
+contract RentFlowEscrowV2 is RentFlowEscrow {
+    function version() external pure override returns (string memory) {
+        return "2.0.0";
+    }
+}
 
 contract MockUSDC is ERC20 {
     constructor() ERC20("USD Coin", "USDC") {}
@@ -34,8 +44,10 @@ contract RentFlowEscrowTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        escrow = new RentFlowEscrow(address(usdc));
-        nft = new RentFlowNFT(address(escrow));
+        escrow = RentFlowEscrow(address(new ERC1967Proxy(
+            address(new RentFlowEscrow()), abi.encodeCall(RentFlowEscrow.initialize, (address(usdc), owner)))));
+        nft = RentFlowNFT(address(new ERC1967Proxy(
+            address(new RentFlowNFT()), abi.encodeCall(RentFlowNFT.initialize, (address(escrow), owner)))));
         escrow.setNftContract(address(nft));
         escrow.setArbiter(arbiter);
 
@@ -69,6 +81,50 @@ contract RentFlowEscrowTest is Test {
 
     function _held(uint256 escrowId) internal view returns (uint256 held) {
         (,, held,,) = escrow.escrows(escrowId);
+    }
+
+    // ── upgrades ─────────────────────────────────────────────────────────────
+
+    function test_ownerUpgradeKeepsAddressAndState() public {
+        uint256 id = _active();
+        uint256 movedIn = escrow.movedInAt(id);
+        assertEq(movedIn, block.timestamp);
+        address before = address(escrow);
+
+        escrow.upgradeToAndCall(address(new RentFlowEscrowV2()), "");
+
+        assertEq(address(escrow), before);
+        assertEq(escrow.version(), "2.0.0");
+        assertEq(escrow.movedInAt(id), movedIn);
+        assertEq(uint8(_status(id)), uint8(RentFlowEscrow.EscrowStatus.Active));
+        assertEq(escrow.pendingWithdrawals(landlord), RENT);
+        assertEq(escrow.arbiter(), arbiter);
+        assertEq(address(escrow.usdcToken()), address(usdc));
+        assertEq(nft.ownerOf(1), tenant);
+    }
+
+    function test_onlyOwnerCanUpgrade() public {
+        address impl = address(new RentFlowEscrowV2());
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, stranger));
+        escrow.upgradeToAndCall(impl, "");
+
+        address nftImpl = address(new RentFlowNFT());
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, stranger));
+        nft.upgradeToAndCall(nftImpl, "");
+    }
+
+    function test_cannotInitializeTwiceOrUseImplementationDirectly() public {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        escrow.initialize(address(usdc), stranger);
+
+        RentFlowEscrow impl = new RentFlowEscrow();
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        impl.initialize(address(usdc), stranger);
+
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        nft.initialize(address(escrow), stranger);
     }
 
     // ── happy path ───────────────────────────────────────────────────────────

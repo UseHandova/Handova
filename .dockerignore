@@ -8,6 +8,7 @@ lib
 src
 !src/lib/arc-rpc.ts
 !src/lib/savings-math.ts
+!src/lib/network.ts
 public
 server/data
 server/uploads

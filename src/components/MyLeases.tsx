@@ -10,18 +10,19 @@ import RentSavings, { type SavingsSuggestion } from '@/components/RentSavings';
 import { useCashPayments } from '@/lib/cash';
 import { navigate } from '@/lib/router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, CheckCircle2, Clock, Download, FileText, Loader2, ShieldCheck, Star, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Download, FileText, Home, Loader2, ShieldCheck, Star, Wrench } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira, USDC_TO_NGN } from '@/lib/naira';
 import { EscrowStatus, ESCROW_STATUS_LABEL } from '@/lib/contracts';
 import {
-  canDispute, formatCountdown, sameAddress, sendEscrowTx, useChainState, useNow, useRefreshChain,
+  canDispute, formatCountdown, nextRentDue, sameAddress, sendEscrowTx, useChainState, useNow, useRefreshChain,
   DEPOSIT_REVIEW_MS, MOVE_IN_WINDOW_MS,
 } from '@/lib/chain';
 import { toast } from 'sonner';
 import LeasePdfExport from '@/components/LeasePdfExport';
 import DisputeEvidence from '@/components/DisputeEvidence';
 import TenantReviews from '@/components/TenantReviews';
+import PropertyReviews from '@/components/PropertyReviews';
 import { api } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';
 import MaintenanceTracker from '@/components/MaintenanceTracker';
@@ -60,6 +61,8 @@ export default function MyLeases({ account, address }: Props) {
   const [disputeEscrow, setDisputeEscrow] = useState<bigint | null>(null);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [rateEscrow, setRateEscrow] = useState<{ id: bigint; location: string } | null>(null);
+  const [landlordView, setLandlordView] = useState<{ landlord?: string; location: string } | null>(null);
+  const [reviewHome, setReviewHome] = useState<{ escrowId: bigint; listingId: bigint; location: string; landlord?: string } | null>(null);
   const chain = useChainState();
   const refreshChain = useRefreshChain();
   const now = useNow();
@@ -107,7 +110,7 @@ export default function MyLeases({ account, address }: Props) {
   // What to save for: next year's rent for the home they live in now (escrow tenancy or confirmed cash payment).
   const savingsSuggestion = useMemo((): SavingsSuggestion | undefined => {
     const live = escrows.find(e => e.status === EscrowStatus.Active);
-    if (live?.listing) return { goalNgn: live.listing.rentUsdc * USDC_TO_NGN, dueAt: live.createdAt + 365 * 86_400_000, label: `${live.location} rent` };
+    if (live?.listing) return { goalNgn: live.listing.rentUsdc * USDC_TO_NGN, dueAt: nextRentDue(live), label: `${live.location} rent` };
     const paid = cash.find(p => p.role === 'tenant' && p.status === 'confirmed' && p.coversUntil > now);
     if (paid) {
       const l = chain.data?.listings.find(x => String(x.id) === paid.listingId);
@@ -242,6 +245,7 @@ export default function MyLeases({ account, address }: Props) {
                       {[
                         { label: u('lease_pdf'), icon: Download, onClick: () => setPdfEscrow(escrow.id) },
                         { label: u('request_repair'), icon: Wrench, onClick: () => setShowMaintenance(true) },
+                        ...(escrow.status !== EscrowStatus.Pending ? [{ label: 'Review the home', icon: Home, onClick: () => setReviewHome({ escrowId: escrow.id, listingId: escrow.listingId, location: escrow.location, landlord: escrow.listing?.landlord }) }] : []),
                         ...(eligible.data?.has(String(escrow.id)) ? [{ label: u('rate_landlord_btn'), icon: Star, onClick: () => setRateEscrow({ id: escrow.id, location: escrow.location }) }] : []),
                         {
                           label: canDispute(escrow) ? u('report_problem') : 'Evidence',
@@ -284,6 +288,17 @@ export default function MyLeases({ account, address }: Props) {
             labels={Object.fromEntries(escrows.map(e => [String(e.id), e.location]))}
             onClose={() => setShowMaintenance(false)} />
         )}
+        {reviewHome && (
+          <PropertyReviews key="review-home" listingId={String(reviewHome.listingId)} escrowId={String(reviewHome.escrowId)} landlord={reviewHome.landlord}
+            title={reviewHome.location} account={account}
+            onLandlordReviews={() => {
+              if (eligible.data?.has(String(reviewHome.escrowId))) setRateEscrow({ id: reviewHome.escrowId, location: reviewHome.location });
+              else setLandlordView({ landlord: reviewHome.landlord, location: reviewHome.location });
+              setReviewHome(null);
+            }}
+            onClose={() => setReviewHome(null)} />
+        )}
+        {landlordView && <TenantReviews key="landlord-view" mode="view" landlord={landlordView.landlord} title={landlordView.location} onClose={() => setLandlordView(null)} />}
         {rateEscrow && (
           <TenantReviews key="rate" mode="rate" account={account} escrowId={String(rateEscrow.id)} title={rateEscrow.location}
             onClose={() => setRateEscrow(null)} />

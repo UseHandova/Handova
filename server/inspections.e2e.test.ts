@@ -12,6 +12,7 @@ import express from 'express';
 import { createPublicClient, createWalletClient, http, parseAbi, type Address, type Hex } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
+import { deployProxied } from './test-proxy';
 
 const PORT = 8549;
 const RPC = `http://127.0.0.1:${PORT}`;
@@ -74,7 +75,7 @@ beforeAll(async () => {
   anvil = spawn('anvil', ['--port', String(PORT), '--silent'], { stdio: 'ignore' });
   await waitFor(() => pc.getBlockNumber());
   const usdc = await deploy('contracts/out/RentFlowEscrow.t.sol/MockUSDC.json', []);
-  const escrow = await deploy('contracts/out/RentFlowEscrow.sol/RentFlowEscrow.json', [usdc]);
+  const escrow = await deployProxied(wallet(OWNER), pc, 'RentFlowEscrow', [usdc]);
   await write(LANDLORD, escrow, 'createListing', [1_000_000n, 100_000n, '{"location":"Yaba","phone":"2348031234567"}']);
   await write(LANDLORD, escrow, 'createListing', [1_000_000n, 100_000n, '{"location":"Ikeja"}']);
   await write(LANDLORD, escrow, 'deactivateListing', [2n]);

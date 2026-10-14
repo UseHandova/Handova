@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {ERC721URIStorage} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import {ERC721URIStorageUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-contract RentFlowNFT is ERC721, ERC721URIStorage, Ownable {
-    address public immutable escrowContract;
+/// @notice Lease certificates, minted by the escrow on move-in. Upgradeable (UUPS) behind an ERC1967 proxy; only the
+///         owner can upgrade. Future versions: append state only, never reorder.
+contract RentFlowNFT is Initializable, ERC721Upgradeable, ERC721URIStorageUpgradeable, OwnableUpgradeable, UUPSUpgradeable {
+    address public escrowContract;
 
     uint256 public tokenCounter;
     mapping(uint256 => uint256) public escrowToTokenId;
@@ -18,10 +22,25 @@ contract RentFlowNFT is ERC721, ERC721URIStorage, Ownable {
 
     event LeaseMinted(uint256 indexed escrowId, uint256 indexed tokenId, address indexed tenant, string tokenUri);
 
-    constructor(address escrowContract_) ERC721("RentFlow Lease Certificate", "RFLEASE") Ownable(msg.sender) {
-        if (escrowContract_ == address(0)) revert ZeroAddress();
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address escrowContract_, address owner_) external initializer {
+        if (escrowContract_ == address(0) || owner_ == address(0)) revert ZeroAddress();
+        __ERC721_init("RentFlow Lease Certificate", "RFLEASE");
+        __ERC721URIStorage_init();
+        __Ownable_init(owner_);
         escrowContract = escrowContract_;
     }
+
+    function version() external pure virtual returns (string memory) {
+        return "1.0.0";
+    }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     function mintLeaseCertificate(
         uint256 escrowId,
@@ -45,7 +64,7 @@ contract RentFlowNFT is ERC721, ERC721URIStorage, Ownable {
     function tokenURI(uint256 tokenId)
         public
         view
-        override(ERC721, ERC721URIStorage)
+        override(ERC721Upgradeable, ERC721URIStorageUpgradeable)
         returns (string memory)
     {
         return super.tokenURI(tokenId);
@@ -54,7 +73,7 @@ contract RentFlowNFT is ERC721, ERC721URIStorage, Ownable {
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC721, ERC721URIStorage)
+        override(ERC721Upgradeable, ERC721URIStorageUpgradeable)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);

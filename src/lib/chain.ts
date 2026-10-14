@@ -62,6 +62,8 @@ export interface ChainEscrow {
   handoverAt: number;
   endRequestedAt: number;
   disputedAt: number;
+  /** Unix ms the tenant moved in (escrow became Active). Older, non-upgradeable deployments don't record it: 0. */
+  movedInAt: number;
   listing?: ChainListing;
 }
 
@@ -115,6 +117,7 @@ async function fetchChainState(): Promise<ChainState> {
         { ...escrowContract, functionName: 'handoverAt', args: [id] } as const,
         { ...escrowContract, functionName: 'endRequestedAt', args: [id] } as const,
         { ...escrowContract, functionName: 'disputedAt', args: [id] } as const,
+        { ...escrowContract, functionName: 'movedInAt', args: [id] } as const,
       ]),
     }),
   ]);
@@ -138,12 +141,12 @@ async function fetchChainState(): Promise<ChainState> {
 
   const byId = new Map(listings.map(l => [l.id, l]));
   const escrows: ChainEscrow[] = escrowIds.map((id, i) => {
-    const row = escrowRows[i * 4].result as readonly [bigint, Address, bigint, number, bigint] | undefined;
+    const row = escrowRows[i * 5].result as readonly [bigint, Address, bigint, number, bigint] | undefined;
     const [listingId, tenant, held, status, createdAt] = row ?? [0n, '0x0000000000000000000000000000000000000000', 0n, 0, 0n];
-    const opt = (j: number) => ms((escrowRows[i * 4 + j].result as bigint | undefined) ?? 0n);
+    const opt = (j: number) => ms((escrowRows[i * 5 + j].result as bigint | undefined) ?? 0n);
     return {
       id, listingId, tenant, heldUsdc: usdc(held), status: status, createdAt: ms(createdAt),
-      handoverAt: opt(1), endRequestedAt: opt(2), disputedAt: opt(3), listing: byId.get(listingId),
+      handoverAt: opt(1), endRequestedAt: opt(2), disputedAt: opt(3), movedInAt: opt(4), listing: byId.get(listingId),
     };
   });
 
@@ -216,6 +219,12 @@ async function sendEscrowTxRaw(account: SmartAccount, call: EscrowWrite) {
   });
   return bundlerClient.waitForUserOperationReceipt({ hash });
 }
+
+const YEAR_MS = 365 * 86_400_000;
+/** When the next year's rent is due on a live tenancy: one year after move-in (or after payment, if move-in wasn't recorded). */
+export const nextRentDue = (e: Pick<ChainEscrow, 'movedInAt' | 'createdAt'>) => (e.movedInAt || e.createdAt) + YEAR_MS;
+/** Whole months from `now` until `due` (0 when due this month or overdue). */
+export const monthsUntil = (due: number, now: number) => Math.max(0, Math.floor((due - now) / (30.44 * 86_400_000)));
 
 export const sameAddress = (a?: string | null, b?: string | null) =>
   !!a && !!b && a.toLowerCase() === b.toLowerCase();

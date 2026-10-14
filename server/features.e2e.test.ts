@@ -12,6 +12,7 @@ import express from 'express';
 import { createPublicClient, createWalletClient, http, parseAbi, parseUnits, type Address, type Hex } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
+import { deployProxied } from './test-proxy';
 
 const PORT = 8548;
 const RPC = `http://127.0.0.1:${PORT}`;
@@ -78,8 +79,8 @@ beforeAll(async () => {
   anvil = spawn('anvil', ['--port', String(PORT), '--silent'], { stdio: 'ignore' });
   await waitFor(() => pc.getBlockNumber());
   usdc = await deploy('contracts/out/RentFlowEscrow.t.sol/MockUSDC.json', []);
-  escrow = await deploy('contracts/out/RentFlowEscrow.sol/RentFlowEscrow.json', [usdc]);
-  const nft = await deploy('contracts/out/RentFlowNFT.sol/RentFlowNFT.json', [escrow]);
+  escrow = await deployProxied(wallet(OWNER), pc, 'RentFlowEscrow', [usdc]);
+  const nft = await deployProxied(wallet(OWNER), pc, 'RentFlowNFT', [escrow]);
   await write(OWNER, escrow, 'setNftContract', [nft]);
   // Listing 1: tenant moves in (escrow 1 Active). Listing 2: tenant paid but not moved in (escrow 2 Pending).
   await write(LANDLORD, escrow, 'createListing', [1_000_000n, 100_000n, '{"location":"Yaba"}']);

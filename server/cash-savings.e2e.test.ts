@@ -14,6 +14,7 @@ import express from 'express';
 import { createPublicClient, createWalletClient, http, parseAbi, type Address, type Hex } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
+import { deployProxied } from './test-proxy';
 
 const PORT = 8553;
 const RPC = `http://127.0.0.1:${PORT}`;
@@ -90,7 +91,7 @@ beforeAll(async () => {
   anvil = spawn('anvil', ['--port', String(PORT), '--silent'], { stdio: 'ignore' });
   await waitFor(() => pc.getBlockNumber());
   usdc = await deploy('contracts/out/RentFlowEscrow.t.sol/MockUSDC.json', []);
-  const escrow = await deploy('contracts/out/RentFlowEscrow.sol/RentFlowEscrow.json', [usdc]);
+  const escrow = await deployProxied(wallet(OWNER), pc, 'RentFlowEscrow', [usdc]);
   vault = await deploy('contracts/out/RentSavingsVault.sol/RentSavingsVault.json', [usdc]);
   await write(LANDLORD, escrow, 'createListing', [500_000_000n, 12_500_000n, '{"location":"Yaba","phone":"2348031234567"}']);
   const { mountAuth } = await import('./auth');

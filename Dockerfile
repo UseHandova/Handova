@@ -8,7 +8,7 @@ RUN bun install --frozen-lockfile --production --ignore-scripts
 
 COPY server ./server
 # The two browser/server shared modules the API imports (everything else in src/ is the web app).
-COPY src/lib/arc-rpc.ts src/lib/savings-math.ts ./src/lib/
+COPY src/lib/arc-rpc.ts src/lib/savings-math.ts src/lib/network.ts ./src/lib/
 COPY tsconfig.json ./
 
 ENV NODE_ENV=production \
