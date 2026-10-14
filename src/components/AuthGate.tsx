@@ -23,7 +23,12 @@ const springs = {
 
 type AuthError = { msg: string; action?: 'login' | 'register' };
 
-const errText = (e: unknown) => (e instanceof Error ? `${e.name} ${e.message}` : String(e));
+/** Name, message and the underlying cause (viem wraps Circle's RPC errors, e.g. "Unknown RPC error" → the real reason). */
+const errText = (e: unknown) => {
+  if (!(e instanceof Error)) return String(e);
+  const x = e as Error & { details?: string; cause?: { message?: string; details?: string } };
+  return [x.name, x.message, x.details, x.cause?.message, x.cause?.details].filter(Boolean).join(' ');
+};
 
 /** Turn Circle / WebAuthn / viem errors into something a first-time user can act on. */
 function friendlyAuthError(e: unknown, mode: 'register' | 'login'): AuthError {
@@ -38,6 +43,10 @@ function friendlyAuthError(e: unknown, mode: 'register' | 'login'): AuthError {
   }
   if (/not ?found|no credential|unknown credential|does not exist/i.test(raw)) {
     return { msg: 'We could not find a Handova account for that passkey. Passkeys made on another website or device do not carry over — create a new account here.', action: 'register' };
+  }
+  // Circle has no wallet setup for this network/domain yet (Modular Wallets passkey domain not configured).
+  if (/entity config|-32012/i.test(raw)) {
+    return { msg: 'Account sign-up is being switched on for Handova right now, so new accounts can\'t be created yet. Please try again in a few minutes.' };
   }
   if (/Invalid credentials|401|Unauthorized|clientKey/i.test(raw)) {
     return { msg: 'Handova cannot reach its wallet service right now. Please try again in a few minutes.' };
