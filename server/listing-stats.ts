@@ -76,7 +76,7 @@ export function allListingStats(): Record<string, ListingStats> {
 export function mountListingStats(app: Express, config: FeatureConfig | null) {
   ensureListingStatsTables();
   const bad = (res: Response, status: number, error: string, code = 'bad_request') => res.status(status).json({ ok: false, code, error });
-  const listingId = (req: Request): string | null => (/^\d{1,12}$/.test(req.params.id ?? '') && req.params.id !== '0' ? req.params.id : null);
+  const listingId = (req: Request): string | null => { const id = String(req.params.id ?? ''); return /^\d{1,12}$/.test(id) && id !== '0' ? id : null; };
 
   const landlordOf = async (id: string): Promise<Address | null> => {
     if (!config) return null;

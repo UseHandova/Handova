@@ -6,7 +6,13 @@
 
 import { arc, arcTestnet, type Chain } from 'viem/chains';
 
-const viteEnv = ((import.meta as unknown as { env?: Record<string, string | undefined> }).env) ?? {};
+// Name each variable explicitly: Vite inlines only the `import.meta.env.VITE_*` keys a file mentions. (Reading
+// `import.meta.env` as a whole object would bake EVERY VITE_ variable from the host into the public bundle.)
+// Bun (the server) also provides import.meta.env, as an alias of process.env.
+const metaEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+const viteEnv: Record<string, string | undefined> = metaEnv
+  ? { VITE_ARC_NETWORK: import.meta.env.VITE_ARC_NETWORK as string | undefined, VITE_PAYMASTER: import.meta.env.VITE_PAYMASTER as string | undefined }
+  : {};
 const nodeEnv: Record<string, string | undefined> = typeof process !== 'undefined' && process.env ? process.env : {};
 const pick = (...keys: string[]) => keys.map(k => viteEnv[k] ?? nodeEnv[k]).find(v => v !== undefined && v !== '');
 
