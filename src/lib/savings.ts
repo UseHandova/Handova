@@ -6,12 +6,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { createPublicClient, encodeFunctionData, parseAbi, type Address } from 'viem';
 import { arcTransport } from '@/lib/arc-rpc';
-import { CHAIN, USE_PAYMASTER } from '@/lib/network';
+import { CHAIN } from '@/lib/network';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { api, hasSession } from '@/lib/api';
-import { bundlerClient } from '@/lib/wallet';
 import { USDC_TO_NGN } from '@/lib/naira';
 import type { Frequency } from '@/lib/savings-math';
+import { sendUserOp } from '@/lib/chain';
 
 export const VAULT_ADDRESS = (import.meta.env.VITE_SAVINGS_VAULT_ADDRESS ?? '') as Address;
 const USDC = '0x3600000000000000000000000000000000000000' as Address;
@@ -53,8 +53,7 @@ export function useSavings(account: SmartAccount) {
   });
 
   async function send(calls: { to: Address; data: `0x${string}` }[]) {
-    const hash = await bundlerClient.sendUserOperation({ account, calls: calls.map(c => ({ ...c, value: 0n })), paymaster: USE_PAYMASTER });
-    await bundlerClient.waitForUserOperationReceipt({ hash });
+    await sendUserOp(account, calls);
     await qc.invalidateQueries({ queryKey: balKey });
   }
 

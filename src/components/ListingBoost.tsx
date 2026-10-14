@@ -6,18 +6,18 @@
  */
 
 import { useState } from 'react';
-import { CHAIN_ID, USE_PAYMASTER } from '@/lib/network';
+import { CHAIN_ID } from '@/lib/network';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, X, CheckCircle2, Loader2, TrendingUp, Star } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { useLang } from '@/lib/LangContext';
 import { toast } from 'sonner';
-import { bundlerClient } from '@/lib/wallet';
 import { encodeFunctionData, erc20Abi, type Hex } from 'viem';
 import { api, ApiError, publicApi } from '@/lib/api';
 import { getUsdc } from '@/onchain-facts';
 import { parseAmount } from '@/onchain-money';
+import { sendUserOp, txErrorText } from '@/lib/chain';
 
 const BOOST_OPTIONS = [
   { id: '7d', days: 7, usdcCost: 2, label: '7 days', popular: false },
@@ -68,12 +68,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
       const amount = parseAmount(CHAIN_ID, option.usdcCost.toString());
       // 1. Pay the treasury in USDC (gasless).
       const calldata = encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [treasury, amount.raw] });
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: USDC_ADDR, data: calldata, value: 0n }],
-        paymaster: USE_PAYMASTER,
-      });
-      const receipt = await bundlerClient.waitForUserOperationReceipt({ hash });
+      const receipt = await sendUserOp(account, [{ to: USDC_ADDR, data: calldata }]);
       // 2. The server checks that payment onchain before turning the boost on.
       const res = await api<{ endsAt: number }>(account, '/api/boosts', {
         body: { listingId, days: option.days, txHash: receipt.receipt.transactionHash },
@@ -84,7 +79,7 @@ export default function ListingBoost({ listingId, listingTitle, account, onClose
       toast.success(`Listing boosted until ${new Date(res.endsAt).toLocaleDateString('en-NG')}!`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(/NotAllowedError|cancel/i.test(msg) ? 'Passkey cancelled.' : e instanceof ApiError ? msg : 'Boost payment failed.');
+      toast.error(/NotAllowedError|cancel/i.test(msg) ? 'Passkey cancelled.' : e instanceof ApiError ? msg : txErrorText(e, 'Boost payment failed.') ?? 'Boost payment failed.');
     } finally {
       setBoosting(false);
     }

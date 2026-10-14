@@ -4,16 +4,16 @@
  */
 
 import { useState } from 'react';
-import { CHAIN_ID, USE_PAYMASTER } from '@/lib/network';
+import { CHAIN_ID } from '@/lib/network';
 import { motion } from 'framer-motion';
 import { MapPin, Home, Info, Loader2, Check } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { formatNaira, nairaToUsdc } from '@/lib/naira';
 import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
-import { bundlerClient } from '@/lib/wallet';
 import { encodeFunctionData } from 'viem';
 import { toast } from 'sonner';
+import { sendUserOp, txErrorText } from '@/lib/chain';
 
 interface Props {
   account: SmartAccount;
@@ -60,14 +60,8 @@ export default function ListProperty({ account }: Props) {
         args: [rentRaw, depositRaw, metadata],
       });
 
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: ESCROW_ADDRESS, data: calldata, value: 0n }],
-        paymaster: USE_PAYMASTER,
-      });
-
       toast.promise(
-        bundlerClient.waitForUserOperationReceipt({ hash }).then(() => setDone(true)),
+        sendUserOp(account, [{ to: ESCROW_ADDRESS, data: calldata }]).then(() => setDone(true)),
         {
           loading: 'Listing property onchain…',
           success: 'Property listed! Tenants can now find you directly.',
@@ -76,7 +70,7 @@ export default function ListProperty({ account }: Props) {
       );
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes('NotAllowedError')) toast.error('Could not list property.');
+      if (!msg.includes('NotAllowedError')) toast.error(txErrorText(e, 'Could not list the property.') ?? 'Could not list the property.');
     } finally {
       setLoading(false);
     }

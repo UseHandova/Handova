@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { CHAIN_ID, USE_PAYMASTER, gasProblem } from '@/lib/network';
+import { CHAIN_ID } from '@/lib/network';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -16,11 +16,9 @@ import { parseAmount } from '@/onchain-money';
 import { ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
 import {
   sameAddress, sendEscrowTx, useChainState, useNow, usePendingWithdrawal, useRefreshChain, useVerifiedAt,
-  MOVE_IN_WINDOW_MS, DEPOSIT_REVIEW_MS, type ChainEscrow,
-} from '@/lib/chain';
+  MOVE_IN_WINDOW_MS, DEPOSIT_REVIEW_MS, type ChainEscrow, assertCanPayGas, sendUserOp, txErrorText } from '@/lib/chain';
 import { EscrowStatus } from '@/lib/contracts';
 import LandlordEscrowPanel from '@/components/LandlordEscrowPanel';
-import { bundlerClient } from '@/lib/wallet';
 import { encodeFunctionData } from 'viem';
 import { toast } from 'sonner';
 import WhatsAppInbox from '@/components/WhatsAppInbox';
@@ -66,6 +64,10 @@ interface MockListing {
   hasVideo: boolean;
   address?: string;
 }
+
+/** Naira amounts: the form keeps plain digits; the field shows them with thousands separators (750000 → 750,000). */
+const digitsOnly = (v: string) => v.replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 13);
+const withCommas = (digits: string) => (digits ? Number(digits).toLocaleString('en-NG') : '');
 
 /** Nigerian number → international digits for wa.me (0803… → 234803…). Empty if it doesn't look valid. */
 function normalisePhone(raw: string): string {
@@ -351,6 +353,8 @@ export default function LandlordDashboard({ account }: Props) {
     }
     setLoading(true);
     try {
+      // Check the wallet can pay the network fee before uploading photos (mainnet, no gas sponsorship).
+      await assertCanPayGas(account.address);
       const rentRaw = parseAmount(CHAIN_ID, rentUsdc.toFixed(6)).raw;
       const depositRaw = parseAmount(CHAIN_ID, depositUsdc.toFixed(6)).raw;
 
@@ -391,8 +395,7 @@ export default function LandlordDashboard({ account }: Props) {
       if (editingId !== null) {
         calls.push({ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'deactivateListing', args: [editingId] }), value: 0n });
       }
-      const hash = await bundlerClient.sendUserOperation({ account, calls, paymaster: USE_PAYMASTER });
-      await bundlerClient.waitForUserOperationReceipt({ hash });
+      await sendUserOp(account, calls);
       if (draftCode) await fetch(`/api/bot/draft/${draftCode}/published`, { method: 'POST' }).catch(() => undefined);
 
       await refreshChain();
@@ -401,7 +404,9 @@ export default function LandlordDashboard({ account }: Props) {
       toast.success(editingId !== null ? 'Changes saved.' : 'Property listed onchain!');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes('NotAllowedError')) toast.error(gasProblem(e) ?? (msg.startsWith('Could not upload') || msg.includes('under') ? msg : editingId !== null ? 'Could not save changes. If a tenant has already paid, the listing can no longer be edited.' : 'Could not list property.'));
+      const text = msg.startsWith('Could not upload') ? msg
+        : txErrorText(e, editingId !== null ? 'Could not save changes. If a tenant has already paid, the listing can no longer be edited.' : 'Could not list the property.');
+      if (text) toast.error(text, { duration: 10_000 });
     } finally {
       setLoading(false);
     }
@@ -805,11 +810,11 @@ export default function LandlordDashboard({ account }: Props) {
               <div id="field-rent" className="scroll-mt-24">
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Annual Rent (₦)</label>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  value={form.rentNgn}
-                  onChange={e => setForm(f => ({ ...f, rentNgn: e.target.value }))}
-                  placeholder="e.g. 480000"
+                  value={withCommas(form.rentNgn)}
+                  onChange={e => setForm(f => ({ ...f, rentNgn: digitsOnly(e.target.value) }))}
+                  placeholder="e.g. 480,000"
                   className="w-full px-4 py-3.5 rounded-2xl border text-lg font-bold outline-none tabular-nums"
                   style={{ background: 'var(--surface-muted)', borderColor: fieldError('rent') ? 'var(--danger)' : 'var(--border)', color: 'var(--ink)' }}
                 />
@@ -824,11 +829,11 @@ export default function LandlordDashboard({ account }: Props) {
               <div id="field-deposit" className="scroll-mt-24">
                 <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Caution fee (₦, refundable)</label>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  value={form.depositNgn}
-                  onChange={e => setForm(f => ({ ...f, depositNgn: e.target.value }))}
-                  placeholder="e.g. 480000"
+                  value={withCommas(form.depositNgn)}
+                  onChange={e => setForm(f => ({ ...f, depositNgn: digitsOnly(e.target.value) }))}
+                  placeholder="e.g. 480,000"
                   className="w-full px-4 py-3.5 rounded-2xl border text-lg font-bold outline-none tabular-nums"
                   style={{ background: 'var(--surface-muted)', borderColor: fieldError('deposit') ? 'var(--danger)' : 'var(--border)', color: 'var(--ink)' }}
                 />
@@ -913,17 +918,12 @@ export default function LandlordDashboard({ account }: Props) {
     if (!window.confirm('Remove this listing? Tenants will no longer see it. You can list the property again any time.')) return;
     setDeleting(String(id));
     try {
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [{ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'deactivateListing', args: [id] }), value: 0n }],
-        paymaster: USE_PAYMASTER,
-      });
-      await bundlerClient.waitForUserOperationReceipt({ hash });
+      await sendUserOp(account, [{ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'deactivateListing', args: [id] }) }]);
       await refreshChain();
       toast.success('Listing removed.');
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!msg.includes('NotAllowedError')) toast.error('Could not remove the listing. If a tenant has already paid, it can\'t be removed.');
+      const text = txErrorText(e, 'Could not remove the listing. If a tenant has already paid, it can\'t be removed.');
+      if (text) toast.error(text, { duration: 10_000 });
     } finally {
       setDeleting(null);
     }

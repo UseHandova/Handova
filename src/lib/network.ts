@@ -42,9 +42,18 @@ export const USE_PAYMASTER: true | undefined = SPONSOR_GAS ? true : undefined;
  * case (the error text from the bundler/RPC varies), or null for other errors.
  */
 export function gasProblem(e: unknown): string | null {
+  const m0 = e instanceof Error ? `${e.message} ${(e as { details?: string }).details ?? ''}` : String(e);
+  if (/NotAllowedError/.test(m0)) return null;
   const m = e instanceof Error ? `${e.message} ${(e as { details?: string }).details ?? ''}` : String(e);
   if (!/AA21|prefund|insufficient funds|exceeds balance|gas required exceeds|InsufficientFunds/i.test(m)) return null;
   return SPONSOR_GAS
     ? 'The network fee couldn\'t be covered right now. Please try again in a minute.'
     : 'Your wallet needs a little USDC to pay the network fee (a fraction of a cent on Arc). Add USDC to your wallet address (top right) and try again.';
+}
+
+/** The network's own reason for a failed transaction, short enough for a toast (viem wraps it in shortMessage/details). */
+export function txReason(e: unknown): string {
+  const x = e as { shortMessage?: string; details?: string; message?: string };
+  const raw = [x?.details, x?.shortMessage, x?.message].find(v => typeof v === 'string' && v.trim()) ?? String(e);
+  return raw.split('\n')[0].replace(/^(Details|Error):\s*/i, '').slice(0, 160);
 }

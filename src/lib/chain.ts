@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createPublicClient, encodeFunctionData, formatUnits, type Address } from 'viem';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { CHAIN, USE_PAYMASTER, gasProblem } from '@/lib/network';
+import { CHAIN, SPONSOR_GAS, USE_PAYMASTER, gasProblem, txReason } from '@/lib/network';
 import { arcTransport } from '@/lib/arc-rpc';
 import { ESCROW_ABI, ESCROW_ADDRESS, EscrowStatus } from '@/lib/contracts';
 import { bundlerClient } from '@/lib/wallet';
@@ -205,19 +205,49 @@ type EscrowWrite =
   | { functionName: 'resolveDispute'; args: [bigint, number] }
   | { functionName: 'withdraw'; args?: [] };
 
-/** Send one escrow call as a gasless user operation and wait for it to land. */
-export async function sendEscrowTx(account: SmartAccount, call: EscrowWrite) {
-  try { return await sendEscrowTxRaw(account, call); } catch (e) { const gas = gasProblem(e); throw gas ? new Error(gas) : e; }
+/** A transaction error whose message is already plain language, safe to show as is. */
+export class TxError extends Error {
+  constructor(message: string, readonly original?: unknown) { super(message); this.name = 'TxError'; }
 }
-async function sendEscrowTxRaw(account: SmartAccount, call: EscrowWrite) {
-  if (!ESCROW_ADDRESS) throw new Error('Contract not deployed — set VITE_ESCROW_ADDRESS.');
-  const data = encodeFunctionData({ abi: ESCROW_ABI, ...call });
-  const hash = await bundlerClient.sendUserOperation({
-    account,
-    calls: [{ to: ESCROW_ADDRESS, data, value: 0n }],
-    paymaster: USE_PAYMASTER,
-  });
-  return bundlerClient.waitForUserOperationReceipt({ hash });
+
+/** Smallest wallet balance that covers a network fee when gas isn't sponsored (USDC is Arc's gas, 18 decimals natively). */
+const MIN_GAS_BALANCE = 10n ** 16n; // 0.01 USDC
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+/** Without gas sponsorship, a wallet with no USDC can't send anything: say so before the user waits for a failure. */
+export async function assertCanPayGas(address: Address) {
+  if (SPONSOR_GAS) return;
+  const balance = await readClient.getBalance({ address }).catch(() => null);
+  if (balance !== null && balance < MIN_GAS_BALANCE) {
+    throw new TxError(`Your wallet needs a little USDC for the network fee (under 1 cent per action on Arc). Send at least 0.05 USDC to your Handova wallet ${short(address)} (top right), then try again.`);
+  }
+}
+
+/** Plain-language text for a failed transaction; `fallback` names what failed. Passkey cancels return null (show nothing). */
+export function txErrorText(e: unknown, fallback: string): string | null {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/NotAllowedError/.test(msg)) return null;
+  if (e instanceof TxError) return e.message;
+  return gasProblem(e) ?? `${fallback} ${txReason(e)}`;
+}
+
+/** Send calls as one user operation (gas sponsored where available) and wait for it to land. */
+export async function sendUserOp(account: SmartAccount, calls: { to: Address; data: `0x${string}`; value?: bigint }[]) {
+  await assertCanPayGas(account.address);
+  try {
+    const hash = await bundlerClient.sendUserOperation({ account, calls: calls.map(c => ({ value: 0n, ...c })), paymaster: USE_PAYMASTER });
+    return await bundlerClient.waitForUserOperationReceipt({ hash });
+  } catch (e) {
+    console.error('[Handova] transaction failed', e);
+    const gas = gasProblem(e);
+    throw gas ? new TxError(gas, e) : e;
+  }
+}
+
+/** Send one escrow call and wait for it to land. */
+export async function sendEscrowTx(account: SmartAccount, call: EscrowWrite) {
+  if (!ESCROW_ADDRESS) throw new TxError('Contract not deployed — set VITE_ESCROW_ADDRESS.');
+  return sendUserOp(account, [{ to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, ...call }) }]);
 }
 
 const YEAR_MS = 365 * 86_400_000;

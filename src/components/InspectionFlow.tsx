@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { CHAIN_ID, USE_PAYMASTER } from '@/lib/network';
+import { CHAIN_ID } from '@/lib/network';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, MessagesSquare, ShieldCheck, X, XCircle, AlertTriangle,
@@ -21,8 +21,7 @@ import { formatNaira, formatUsdc, USDC_TO_NGN } from '@/lib/naira';
 import { TenantCashPay } from '@/components/CashPayment';
 import { parseAmount } from '@/onchain-money';
 import { ERC20_APPROVE_ABI, ESCROW_ABI, ESCROW_ADDRESS } from '@/lib/contracts';
-import { useNow, useRefreshChain } from '@/lib/chain';
-import { bundlerClient } from '@/lib/wallet';
+import { useNow, useRefreshChain, TxError, sendUserOp, txErrorText } from '@/lib/chain';
 import { getUsdc } from '@/onchain-facts';
 import { encodeFunctionData, type Hex } from 'viem';
 import type { SmartAccount } from 'viem/account-abstraction';
@@ -176,21 +175,18 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
     setBusy('pay');
     try {
       const total = parseAmount(CHAIN_ID, (listing.rentUsdc + listing.depositUsdc).toString());
-      const hash = await bundlerClient.sendUserOperation({
-        account,
-        calls: [
-          { to: USDC_ADDR, data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: 'approve', args: [ESCROW_ADDRESS, total.raw] }), value: 0n },
-          { to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'depositRent', args: [listing.id] }), value: 0n },
-        ],
-        paymaster: USE_PAYMASTER,
-      });
-      await bundlerClient.waitForUserOperationReceipt({ hash });
+      await sendUserOp(account, [
+        { to: USDC_ADDR, data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: 'approve', args: [ESCROW_ADDRESS, total.raw] }) },
+        { to: ESCROW_ADDRESS, data: encodeFunctionData({ abi: ESCROW_ABI, functionName: 'depositRent', args: [listing.id] }) },
+      ]);
       void refreshChain();
       setPaid(true);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(msg.includes('NotAllowedError') ? 'Payment cancelled — nothing was charged.' : /insufficient|exceeds balance|AA21|prefund/i.test(msg)
-        ? `Not enough USDC. You need ${formatUsdc(listing.rentUsdc + listing.depositUsdc)} in your wallet.` : 'Payment failed — nothing was charged. Please try again.');
+      toast.error(msg.includes('NotAllowedError') ? 'Payment cancelled — nothing was charged.'
+        : e instanceof TxError ? e.message
+        : /insufficient|exceeds balance|AA21|prefund/i.test(msg) ? `Not enough USDC. You need ${formatUsdc(listing.rentUsdc + listing.depositUsdc)} in your wallet.`
+        : txErrorText(e, 'Payment failed — nothing was charged.') ?? 'Payment failed — nothing was charged.', { duration: 10_000 });
     } finally { setBusy(null); }
   }
 

@@ -2,7 +2,7 @@
  * Circle Modular Wallets (passkey) setup for Arc Testnet.
  * Social / passkey login: each user registers once with a biometric passkey
  * (works on every phone with Face ID / fingerprint / PIN — no seed phrase).
- * Gas is sponsored (paymaster: USE_PAYMASTER) so users never need separate gas tokens.
+ * Gas: sponsored on testnet; on mainnet the wallet pays its own (tiny, USDC) fee unless VITE_PAYMASTER=true (src/lib/network.ts).
  */
 
 import {
@@ -19,7 +19,7 @@ import {
   type SmartAccount,
 } from 'viem/account-abstraction';
 import { createPublicClient } from 'viem';
-import { CHAIN, CIRCLE_CHAIN_PATH, USE_PAYMASTER } from '@/lib/network';
+import { CHAIN, CIRCLE_CHAIN_PATH } from '@/lib/network';
 
 const clientKey = import.meta.env.VITE_CLIENT_KEY as string;
 const clientUrl = import.meta.env.VITE_CLIENT_URL as string;
