@@ -20,6 +20,7 @@ import {
 } from 'viem/account-abstraction';
 import { createPublicClient } from 'viem';
 import { CHAIN, CIRCLE_CHAIN_PATH } from '@/lib/network';
+import { arcTransport } from '@/lib/arc-rpc';
 
 const clientKey = import.meta.env.VITE_CLIENT_KEY as string;
 const clientUrl = import.meta.env.VITE_CLIENT_URL as string;
@@ -36,9 +37,25 @@ export const publicClient = createPublicClient({
   transport: modularTransport,
 });
 
+/** Circle's bundler rejects a priority fee under 1 gwei, but Arc reports 0 (eth_maxPriorityFeePerGas), so set a floor. */
+const MIN_PRIORITY_FEE = 1_000_000_000n; // 1 gwei
+const feeClient = createPublicClient({ chain: CHAIN, transport: arcTransport() });
+
 export const bundlerClient = createBundlerClient({
   chain: CHAIN,
   transport: modularTransport,
+  userOperation: {
+    async estimateFeesPerGas() {
+      const [block, suggested] = await Promise.all([
+        feeClient.getBlock({ blockTag: 'latest' }),
+        feeClient.estimateMaxPriorityFeePerGas().catch(() => 0n),
+      ]);
+      const maxPriorityFeePerGas = suggested > MIN_PRIORITY_FEE ? suggested : MIN_PRIORITY_FEE;
+      const baseFee = block.baseFeePerGas ?? 0n;
+      // Headroom for the base fee rising before inclusion; the account is charged base fee + priority, not the max.
+      return { maxFeePerGas: baseFee * 2n + maxPriorityFeePerGas, maxPriorityFeePerGas };
+    },
+  },
 });
 
 /**
