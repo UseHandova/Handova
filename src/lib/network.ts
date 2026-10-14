@@ -39,7 +39,9 @@ export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`;
  * Gas sponsorship through Circle's paymaster. Free on testnet; on mainnet it needs Circle Gas Station set up and paid
  * for, so it is off unless VITE_PAYMASTER=true — users then pay the (tiny, USDC) gas from their own wallet.
  */
-export const SPONSOR_GAS = (pick('VITE_PAYMASTER') ?? (IS_MAINNET ? 'false' : 'true')) === 'true';
+// Any value except "false"/"0" turns it on (e.g. "true", or the Gas Station policy ID — the default policy is used).
+const paymasterSetting = (pick('VITE_PAYMASTER') ?? (IS_MAINNET ? 'false' : 'true')).trim().toLowerCase();
+export const SPONSOR_GAS = paymasterSetting !== 'false' && paymasterSetting !== '0';
 /** Pass as `paymaster` to sendUserOperation: `true` = Circle sponsors gas, `undefined` = the wallet pays its own. */
 export const USE_PAYMASTER: true | undefined = SPONSOR_GAS ? true : undefined;
 
