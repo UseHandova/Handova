@@ -1,5 +1,19 @@
 # Handova — Lagos Housing DApp
 
+## Deployed Contracts (Arc Mainnet, chain 5042) — deployed 2026-10-14
+
+Escrow and NFT are upgradeable (UUPS / ERC1967 proxies) — the app uses the PROXY addresses. Upgrade with
+`contracts/script/UpgradeRentFlow.s.sol` (owner only). The savings vault is deliberately not upgradeable.
+
+| Contract | Address |
+|---|---|
+| RentFlowEscrow (proxy) | `0x5641ED975768383a387905986932CaDE0FD912e9` (impl `0xe69f199E598445c0c2cD6323884AbeD6aAdBF5B2`) |
+| RentFlowNFT (proxy) | `0x21d614F1587fCF9AB61BD48fb0F6659d5E1002E6` (impl `0x7446B4936E4ea0048911f23061bfe2E243C80bC0`) |
+| RentSavingsVault | `0xE9aA440A182B3A0405d8158C3191d945c60b076c` |
+
+Owner, arbiter and verifier: `0x3Be7fbBDbC73Fc4731D60EF09c4BA1A94DC58E41` (the `VERIFIER_PRIVATE_KEY` in `.env` / Railway).
+Explorer: https://explorer.arc.io. Switch the app with `VITE_ARC_NETWORK=mainnet` (Vercel) / `ARC_NETWORK=mainnet` (Railway) — see `src/lib/network.ts`.
+
 ## Deployed Contracts (Arc Testnet)
 
 | Contract | Address |
