@@ -22,7 +22,7 @@ type Props =
   | { mode: 'view'; landlord?: string; title: string; onClose: () => void }
   | { mode: 'rate'; account: SmartAccount; escrowId: string; title: string; onClose: () => void };
 
-function Stars({ value, size = 'w-4 h-4' }: { value: number; size?: string }) {
+export function Stars({ value, size = 'w-4 h-4' }: { value: number; size?: string }) {
   return (
     <span className="inline-flex gap-0.5" aria-label={`${value} out of 5`}>
       {[1, 2, 3, 4, 5].map(i => (

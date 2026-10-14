@@ -39,6 +39,7 @@ import { mountOwnership } from './ownership';
 import { mountAdmin } from './admin';
 import { mountCash } from './cash';
 import { mountSavings, vaultFromEnv } from './savings';
+import { mountListingStats } from './listing-stats';
 import { backupConfigFromEnv, scheduleBackups } from './backup';
 import { openDrafts, type Draft } from './drafts';
 
@@ -396,6 +397,7 @@ mountPhoneAuth(app);
 mountOwnership(app, featureConfigFromEnv());
 mountAdmin(app, featureConfigFromEnv());
 mountCash(app, featureConfigFromEnv(), whatsappNotify);
+mountListingStats(app, featureConfigFromEnv());
 const savings = mountSavings(app, vaultFromEnv(), whatsappNotify);
 // Savings reminders: check hourly; each plan gets at most one a day.
 setInterval(() => { savings.sendReminders().catch(e => console.error('[Savings] Reminders failed:', e instanceof Error ? e.message : e)); }, 3600_000).unref();

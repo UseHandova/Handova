@@ -13,11 +13,15 @@ import { formatNaira } from '@/lib/naira';
 import { useLang } from '@/lib/LangContext';
 import type { Listing } from '@/components/BrowseListings';
 import { useUi } from '@/lib/i18n-ui';
+import ListingSocialProof from '@/components/ListingSocialProof';
+import type { ListingStats } from '@/lib/listing-stats';
 
 interface Props {
   listing: Listing;
   saved: boolean;
   onToggleSave: () => void;
+  /** Interest counts (absent for samples). */
+  stats?: ListingStats;
   onClose: () => void;
   onRent: () => void;
   /** Overrides the main button text when the tenant already has a visit in progress. */
@@ -33,7 +37,7 @@ interface Props {
 const BEDROOM_TYPES = new Set(['single_room', 'self_contain', 'mini_flat', 'two_bed', 'three_bed']);
 
 
-export default function ListingDetail({ listing, saved, onToggleSave, onClose, onRent, rentLabel, onMessage, onMap, onShare, onReviews }: Props) {
+export default function ListingDetail({ listing, saved, onToggleSave, stats, onClose, onRent, rentLabel, onMessage, onMap, onShare, onReviews }: Props) {
   const { t } = useLang();
   const u = useUi();
   const [index, setIndex] = useState(0);
@@ -128,6 +132,8 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
             </div>
           </div>
 
+          {stats && <ListingSocialProof stats={stats} variant="full" />}
+
           {/* Landlord trust */}
           {listing.sample ? (
             <div className="flex gap-3 p-4 rounded-2xl" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
@@ -216,8 +222,8 @@ export default function ListingDetail({ listing, saved, onToggleSave, onClose, o
             {[
               { label: 'Map', icon: Map, onClick: onMap },
               { label: 'Share', icon: Share2, onClick: onShare },
-              { label: saved ? 'Saved' : 'Save', icon: Heart, onClick: onToggleSave, active: saved },
-              { label: 'Reviews', icon: Star, onClick: onReviews },
+              { label: saved ? 'Saved' : 'Save for later', icon: Heart, onClick: onToggleSave, active: saved },
+              { label: stats?.reviews ? `Reviews (${stats.reviews})` : 'Reviews', icon: Star, onClick: onReviews },
             ].map(({ label, icon: Icon, onClick, active }) => (
               <button key={label} onClick={onClick}
                 className="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-medium"

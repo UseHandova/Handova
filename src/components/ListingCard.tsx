@@ -11,12 +11,16 @@ import { useLang } from '@/lib/LangContext';
 import { OwnershipPill } from '@/components/OwnershipProof';
 import type { Listing } from '@/components/BrowseListings';
 import { useUi } from '@/lib/i18n-ui';
+import ListingSocialProof from '@/components/ListingSocialProof';
+import type { ListingStats } from '@/lib/listing-stats';
 
 interface Props {
   listing: Listing;
   priceMode: 'monthly' | 'yearly';
   saved: boolean;
   onToggleSave: () => void;
+  /** Interest counts (absent for samples). */
+  stats?: ListingStats;
   onOpen: () => void;
 }
 
@@ -37,7 +41,7 @@ export function VerificationPill({ listing, size = 'sm' }: { listing: Listing; s
   );
 }
 
-export default function ListingCard({ listing, priceMode, saved, onToggleSave, onOpen }: Props) {
+export default function ListingCard({ listing, priceMode, saved, onToggleSave, stats, onOpen }: Props) {
   const { t } = useLang();
   const u = useUi();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -129,6 +133,7 @@ export default function ListingCard({ listing, priceMode, saved, onToggleSave, o
           {formatNaira(listing.depositUsdc)} {u('caution_escrow')}
           {listing.amenities.length > 0 && <> · {listing.amenities.slice(0, 3).join(', ')}</>}
         </p>
+        {stats && <ListingSocialProof stats={stats} variant="compact" />}
       </div>
     </article>
   );

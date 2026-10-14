@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, SlidersHorizontal, X, Bell, Gift, Loader2 } from 'lucide-react';
+import { Search, SlidersHorizontal, X, Bell, Gift, Loader2, Heart } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { LAGOS_AREAS, PROPERTY_TYPES, type PropertyType } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
@@ -24,6 +24,8 @@ import { useRentedForCash } from '@/lib/cash';
 import ShareListing from '@/components/ShareListing';
 import SavedSearches from '@/components/SavedSearches';
 import TenantReviews from '@/components/TenantReviews';
+import PropertyReviews from '@/components/PropertyReviews';
+import { recordView, useListingStats, useSavedListings } from '@/lib/listing-stats';
 import ReferralSystem from '@/components/ReferralSystem';
 import ListingCard from '@/components/ListingCard';
 import ListingDetail from '@/components/ListingDetail';
@@ -149,7 +151,10 @@ export default function BrowseListings({ account }: Props) {
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [priceMode, setPriceMode] = useState<'monthly' | 'yearly'>('yearly');
   const [showFilters, setShowFilters] = useState(false);
-  const [saved, setSaved] = useState<Set<bigint>>(new Set());
+  const { saved: savedIds, toggle: toggleSaved } = useSavedListings(account);
+  const statsFor = useListingStats();
+  const [savedOnly, setSavedOnly] = useState(false);
+  const [landlordReviews, setLandlordReviews] = useState<Listing | null>(null);
   const [detail, setDetail] = useState<Listing | null>(null);
   const [mapListing, setMapListing] = useState<Listing | null>(null);
   const [flowListing, setFlowListing] = useState<Listing | null>(null);
@@ -206,21 +211,24 @@ export default function BrowseListings({ account }: Props) {
     const matchFurnish = furnishing === 'all' || l.furnishing === furnishing;
     const matchVerified = !verifiedOnly || l.verifiedAt > 0;
     const matchQ = !q || [l.address, l.location, l.title, l.desc].some(s => s.toLowerCase().includes(q));
-    return matchArea && matchType && matchFurnish && matchVerified && matchQ;
+    const matchSaved = !savedOnly || savedIds.has(String(l.id));
+    return matchArea && matchType && matchFurnish && matchVerified && matchQ && matchSaved;
   });
 
   const activeFilters = [propertyType !== 'all', furnishing !== 'all', verifiedOnly].filter(Boolean).length;
 
-  function toggleSave(id: bigint) {
-    setSaved(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  const isSaved = (l: Listing) => savedIds.has(String(l.id));
+  function toggleSave(l: Listing) {
+    if (l.sample) { toast.info('This is a sample home. Save real listings once landlords post them.'); return; }
+    void toggleSaved(l.id);
+  }
+  function openDetail(l: Listing) {
+    setDetail(l);
+    if (!l.sample) recordView(l.id);
   }
 
   function clearFilters() {
-    setArea('all_areas'); setPropertyType('all'); setFurnishing('all'); setVerifiedOnly(false); setQuery('');
+    setArea('all_areas'); setPropertyType('all'); setFurnishing('all'); setVerifiedOnly(false); setQuery(''); setSavedOnly(false);
   }
 
   const chip = (active: boolean) => active
@@ -324,6 +332,12 @@ export default function BrowseListings({ account }: Props) {
             </p>
           </div>
           <div className="flex gap-2">
+            <button onClick={() => setSavedOnly(v => !v)} aria-pressed={savedOnly} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm"
+              style={savedOnly
+                ? { background: 'var(--ink)', color: 'var(--bg)', border: '1px solid var(--ink)' }
+                : { background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--border)' }}>
+              <Heart className="w-4 h-4" style={savedOnly ? undefined : { color: '#e0475b' }} /> Saved{savedIds.size > 0 ? ` (${savedIds.size})` : ''}
+            </button>
             <button onClick={() => setShowSavedSearches(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm"
               style={{ background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--border)' }}>
               <Bell className="w-4 h-4" /> {t('saved_searches')}
@@ -346,8 +360,8 @@ export default function BrowseListings({ account }: Props) {
           <div className="flex justify-center py-24"><Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--subtle)' }} /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 space-y-3">
-            <p className="font-semibold" style={{ color: 'var(--ink)' }}>{u('no_match')}</p>
-            <p className="text-sm" style={{ color: 'var(--muted)' }}>{u('no_match_sub')}</p>
+            <p className="font-semibold" style={{ color: 'var(--ink)' }}>{savedOnly && savedIds.size === 0 ? 'No saved homes yet' : u('no_match')}</p>
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>{savedOnly && savedIds.size === 0 ? 'Tap the heart on any home to save it for later.' : u('no_match_sub')}</p>
             <button onClick={clearFilters} className="text-sm font-semibold px-4 py-2 rounded-xl" style={{ background: 'var(--accent)', color: 'white' }}>
               {u('clear_filters')}
             </button>
@@ -356,8 +370,9 @@ export default function BrowseListings({ account }: Props) {
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map(listing => (
               <ListingCard key={String(listing.id)} listing={listing} priceMode={priceMode}
-                saved={saved.has(listing.id)} onToggleSave={() => toggleSave(listing.id)}
-                onOpen={() => setDetail(listing)} />
+                saved={isSaved(listing)} onToggleSave={() => toggleSave(listing)}
+                stats={listing.sample ? undefined : statsFor(listing.id)}
+                onOpen={() => openDetail(listing)} />
             ))}
           </div>
         )}
@@ -367,7 +382,8 @@ export default function BrowseListings({ account }: Props) {
       <AnimatePresence>
         {detail && (
           <ListingDetail key="detail" listing={detail}
-            saved={saved.has(detail.id)} onToggleSave={() => toggleSave(detail.id)}
+            saved={isSaved(detail)} onToggleSave={() => toggleSave(detail)}
+            stats={detail.sample ? undefined : statsFor(detail.id)}
             onClose={() => setDetail(null)}
             onRent={() => { setFlowListing(detail); setDetail(null); }}
             rentLabel={visitLabel(detail)}
@@ -392,7 +408,14 @@ export default function BrowseListings({ account }: Props) {
         {shareListing && <ShareListing key="share-modal" listing={shareListing} onClose={() => setShareListing(null)} />}
       </AnimatePresence>
       <AnimatePresence>
-        {reviewListing && <TenantReviews key="review-modal" mode="view" landlord={reviewListing.landlord} title={reviewListing.title} onClose={() => setReviewListing(null)} />}
+        {reviewListing && (reviewListing.sample
+          ? <TenantReviews key="review-modal" mode="view" title={reviewListing.title} onClose={() => setReviewListing(null)} />
+          : <PropertyReviews key="review-modal" listingId={String(reviewListing.id)} landlord={reviewListing.landlord} title={reviewListing.title} account={account}
+              onLandlordReviews={() => { setLandlordReviews(reviewListing); setReviewListing(null); }}
+              onClose={() => setReviewListing(null)} />)}
+      </AnimatePresence>
+      <AnimatePresence>
+        {landlordReviews && <TenantReviews key="landlord-reviews" mode="view" landlord={landlordReviews.landlord} title={landlordReviews.title} onClose={() => setLandlordReviews(null)} />}
       </AnimatePresence>
       <AnimatePresence>
         {showSavedSearches && <SavedSearches key="saved-searches" onClose={() => setShowSavedSearches(false)} />}
