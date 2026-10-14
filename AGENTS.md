@@ -12,7 +12,7 @@ Escrow and NFT are upgradeable (UUPS / ERC1967 proxies) — the app uses the PRO
 | RentSavingsVault | `0xE9aA440A182B3A0405d8158C3191d945c60b076c` |
 
 Owner, arbiter and verifier: `0x3Be7fbBDbC73Fc4731D60EF09c4BA1A94DC58E41` (the `VERIFIER_PRIVATE_KEY` in `.env` / Railway).
-Explorer: https://explorer.arc.io. Switch the app with `VITE_ARC_NETWORK=mainnet` (Vercel) / `ARC_NETWORK=mainnet` (Railway) — see `src/lib/network.ts`.
+Explorer: https://explorer.arc.io. Source verified (exact match) on Sourcify for all five addresses — https://repo.sourcify.dev/5042/<address>. The explorer's API sits behind a Cloudflare challenge, so verify with `forge verify-contract … --chain-id 5042 --verifier sourcify`. Switch the app with `VITE_ARC_NETWORK=mainnet` (Vercel) / `ARC_NETWORK=mainnet` (Railway) — see `src/lib/network.ts`.
 
 ## Deployed Contracts (Arc Testnet)
 
