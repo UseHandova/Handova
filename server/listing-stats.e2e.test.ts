@@ -67,7 +67,7 @@ async function call(a: PrivateKeyAccount | null, path: string, body?: unknown) {
   const headers: Record<string, string> = body ? { 'Content-Type': 'application/json' } : {};
   if (a) headers.Authorization = `Bearer ${await session(a)}`;
   const res = await fetch(base + path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
-  return { status: res.status, body: await res.json() as Record<string, any> };
+  return { status: res.status, body: await res.json() as Record<string, unknown> };
 }
 const stats = async (id: string) => ((await call(null, '/api/listings/stats')).body.stats as Record<string, Record<string, number>>)[id] ?? {};
 async function inspection(listingId: string, tenant: Address, status: string, slotAt = Date.now() + 86_400_000) {

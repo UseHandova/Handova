@@ -53,8 +53,11 @@ describe('USDC amounts', () => {
     expect(formatAmount(5042002, a)).toContain('512.5');
     expect(parseUsdc('0')).toBe(0n);
   });
-  test('rejects more decimals than USDC has', () => {
-    expect(() => parseAmount(5042002, '1.0000001')).toThrow();
+  test('silently truncates beyond USDC decimals (viem parseUnits behaviour)', () => {
+    // viem's parseUnits truncates extra fractional digits rather than throwing.
+    // 1.0000001 with 6 decimals → 1_000_000n (the trailing 1 is below 1 micro-USDC).
+    const result = parseAmount(5042002, '1.0000001');
+    expect(result.raw).toBe(1_000_000n);
   });
 });
 

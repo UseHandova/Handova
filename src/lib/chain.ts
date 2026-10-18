@@ -36,6 +36,10 @@ export interface ListingMeta {
   phone?: string;
   /** Uploaded photos/videos (URLs served by /api/media). */
   media?: { type: 'image' | 'video'; url: string }[];
+  /** Landlord's free-text tenant preferences / exemptions. */
+  preferences?: string;
+  /** Quick-pick preference tags e.g. ['no_pets', 'professionals_only']. */
+  preferenceTags?: string[];
 }
 
 export interface ChainListing {

@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, SlidersHorizontal, X, Bell, Gift, Loader2, Heart } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { LAGOS_AREAS, PROPERTY_TYPES, type PropertyType } from '@/lib/i18n';
+import { LAGOS_AREAS, PROPERTY_TYPES, COMMERCIAL_TYPES, type PropertyType } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import { nairaToUsdc } from '@/lib/naira';
 import { useChainState, useHiddenListings, type ChainListing } from '@/lib/chain';
@@ -60,6 +60,10 @@ export interface Listing {
   sample?: boolean;
   /** Unix ms when Handova approved the landlord's ownership documents for this address (0 = not checked). */
   ownershipCheckedAt?: number;
+  /** Landlord's optional tenant preferences / exemptions e.g. "No couples, no pets". */
+  preferences?: string;
+  /** Quick-pick preference tags chosen by landlord. */
+  preferenceTags?: string[];
 }
 
 const NEUTRAL = 'linear-gradient(135deg, #2a332e 0%, #46524b 100%)';
@@ -94,6 +98,8 @@ function fromChain(l: ChainListing): Listing {
     verifiedAt: l.landlordVerifiedAt,
     landlord: l.landlord,
     landlordPhone: m.phone,
+    preferences: m.preferences,
+    preferenceTags: m.preferenceTags,
   };
 }
 
@@ -149,6 +155,7 @@ export default function BrowseListings({ account }: Props) {
   const [propertyType, setPropertyType] = useState<PropertyType | 'all'>('all');
   const [furnishing, setFurnishing] = useState<Furnishing | 'all'>('all');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [listingCategory, setListingCategory] = useState<'all' | 'residential' | 'commercial'>('all');
   const [priceMode, setPriceMode] = useState<'monthly' | 'yearly'>('yearly');
   const [showFilters, setShowFilters] = useState(false);
   const { saved: savedIds, toggle: toggleSaved } = useSavedListings(account);
@@ -204,6 +211,7 @@ export default function BrowseListings({ account }: Props) {
   }, [visitParam, chain.isSuccess, listings]);
   const showingSamples = listings[0]?.sample ?? false;
 
+  const commercialSet = new Set(COMMERCIAL_TYPES as readonly string[]);
   const filtered = listings.filter(l => {
     const q = query.trim().toLowerCase();
     const matchArea = area === 'all_areas' || l.area === area || l.location.toLowerCase().includes(area.toLowerCase());
@@ -212,10 +220,12 @@ export default function BrowseListings({ account }: Props) {
     const matchVerified = !verifiedOnly || l.verifiedAt > 0;
     const matchQ = !q || [l.address, l.location, l.title, l.desc].some(s => s.toLowerCase().includes(q));
     const matchSaved = !savedOnly || savedIds.has(String(l.id));
-    return matchArea && matchType && matchFurnish && matchVerified && matchQ && matchSaved;
+    const isCommercial = commercialSet.has(l.propertyType);
+    const matchCategory = listingCategory === 'all' || (listingCategory === 'commercial' ? isCommercial : !isCommercial);
+    return matchArea && matchType && matchFurnish && matchVerified && matchQ && matchSaved && matchCategory;
   });
 
-  const activeFilters = [propertyType !== 'all', furnishing !== 'all', verifiedOnly].filter(Boolean).length;
+  const activeFilters = [propertyType !== 'all', furnishing !== 'all', verifiedOnly, listingCategory !== 'all'].filter(Boolean).length;
 
   const isSaved = (l: Listing) => savedIds.has(String(l.id));
   function toggleSave(l: Listing) {
@@ -228,7 +238,7 @@ export default function BrowseListings({ account }: Props) {
   }
 
   function clearFilters() {
-    setArea('all_areas'); setPropertyType('all'); setFurnishing('all'); setVerifiedOnly(false); setQuery(''); setSavedOnly(false);
+    setArea('all_areas'); setPropertyType('all'); setFurnishing('all'); setVerifiedOnly(false); setQuery(''); setSavedOnly(false); setListingCategory('all');
   }
 
   const chip = (active: boolean) => active
@@ -286,11 +296,23 @@ export default function BrowseListings({ account }: Props) {
                 className="overflow-hidden">
                 <div className="grid gap-4 sm:grid-cols-[2fr_1fr] pt-1 pb-2">
                   <div>
+                    {/* Residential / Commercial tabs */}
+                    <div className="flex gap-1.5 mb-3 p-1 rounded-xl w-fit" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                      {(['all', 'residential', 'commercial'] as const).map(cat => (
+                        <button key={cat} onClick={() => { setListingCategory(cat); setPropertyType('all'); }}
+                          className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all"
+                          style={listingCategory === cat
+                            ? { background: cat === 'commercial' ? '#0e7490' : 'var(--accent)', color: 'white' }
+                            : { color: 'var(--muted)' }}>
+                          {cat === 'all' ? t('all_types') : cat === 'commercial' ? '🏪 Commercial' : '🏠 Residential'}
+                        </button>
+                      ))}
+                    </div>
                     <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted)' }}>{t('property_type_label')}</p>
                     <div className="flex flex-wrap gap-2">
-                      {(['all', ...PROPERTY_TYPES] as const).map(pt => (
+                      {(['all', ...(listingCategory === 'commercial' ? COMMERCIAL_TYPES : listingCategory === 'residential' ? [] : PROPERTY_TYPES)] as const).map(pt => (
                         <button key={pt} onClick={() => setPropertyType(pt)} className="px-3 py-1.5 rounded-full text-sm" style={chip(propertyType === pt)}>
-                          {pt === 'all' ? t('all_types') : t(pt)}
+                          {pt === 'all' ? t('all_types') : t(pt as Parameters<typeof t>[0])}
                         </button>
                       ))}
                     </div>

@@ -34,7 +34,7 @@ import { LandlordCashPayments } from '@/components/CashPayment';
 import { useMyOwnership } from '@/lib/ownership';
 import { clearReturnParams, diditSessionFromUrl } from '@/lib/url';
 import { usePath } from '@/lib/router';
-import { PROPERTY_TYPES, type PropertyType, type TranslationKey } from '@/lib/i18n';
+import { RESIDENTIAL_TYPES, COMMERCIAL_TYPES, type PropertyType, type TranslationKey } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import LandlordVerification from '@/components/LandlordVerification';
 import ListingBoost from '@/components/ListingBoost';
@@ -143,6 +143,8 @@ export default function LandlordDashboard({ account }: Props) {
     depositNgn: '',
     amenities: [] as string[],
     phone: '',
+    preferences: '',
+    preferenceTags: [] as string[],
   });
   const [geoStatus, setGeoStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
@@ -185,6 +187,8 @@ export default function LandlordDashboard({ account }: Props) {
         description: m.description ?? '', rentNgn: String(Math.round(editTarget.rentUsdc * USDC_TO_NGN)),
         depositNgn: String(Math.round(editTarget.depositUsdc * USDC_TO_NGN)), amenities: m.amenities ?? [],
         phone: m.phone ? `0${m.phone.slice(3)}` : '',
+        preferences: (m.preferences) ?? '',
+        preferenceTags: (m.preferenceTags) ?? [],
       });
       setMedia(fromUrls(m.media));
       setPin(m.lat && m.lng ? { lat: m.lat, lng: m.lng } : null);
@@ -394,6 +398,8 @@ export default function LandlordDashboard({ account }: Props) {
         m: mediaToNames(uploaded),
         ...(pin && { lat: Math.round(pin.lat * 1e5) / 1e5, lng: Math.round(pin.lng * 1e5) / 1e5 }),
         ...(normalisePhone(form.phone) && { phone: normalisePhone(form.phone) }),
+        ...(form.preferences.trim() && { preferences: form.preferences.trim() }),
+        ...(form.preferenceTags.length > 0 && { preferenceTags: form.preferenceTags }),
       });
 
       const calldata = encodeFunctionData({
@@ -426,7 +432,7 @@ export default function LandlordDashboard({ account }: Props) {
   }
 
   function resetForm() {
-    setForm({ address: '', location: '', rooms: '2', propertyType: 'two_bed', furnishing: 'unfurnished', description: '', rentNgn: '', depositNgn: '', amenities: [], phone: '' });
+    setForm({ address: '', location: '', rooms: '2', propertyType: 'two_bed', furnishing: 'unfurnished', description: '', rentNgn: '', depositNgn: '', amenities: [], phone: '', preferences: '', preferenceTags: [] });
     setGeoStatus('idle');
     setPin(null);
     setMedia([]);
@@ -736,17 +742,37 @@ export default function LandlordDashboard({ account }: Props) {
               <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                 {t('property_type_label')}
               </label>
-              <div className="flex flex-wrap gap-2">
-                {(PROPERTY_TYPES as readonly PropertyType[]).map(pt => (
-                  <motion.button key={pt} whileTap={{ scale: 0.93 }}
-                    onClick={() => setForm(f => ({ ...f, propertyType: pt }))}
-                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all"
-                    style={form.propertyType === pt
-                      ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)', boxShadow: 'none' }
-                      : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
-                    {t(pt as TranslationKey)}
-                  </motion.button>
-                ))}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--muted)' }}>🏠 Residential</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(RESIDENTIAL_TYPES as readonly PropertyType[]).map(pt => (
+                      <motion.button key={pt} whileTap={{ scale: 0.93 }}
+                        onClick={() => setForm(f => ({ ...f, propertyType: pt }))}
+                        className="px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all"
+                        style={form.propertyType === pt
+                          ? { background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)' }
+                          : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
+                        {t(pt as TranslationKey)}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#0e7490' }}>🏪 Commercial</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(COMMERCIAL_TYPES as readonly PropertyType[]).map(pt => (
+                      <motion.button key={pt} whileTap={{ scale: 0.93 }}
+                        onClick={() => setForm(f => ({ ...f, propertyType: pt }))}
+                        className="px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all"
+                        style={form.propertyType === pt
+                          ? { background: '#0e7490', color: 'white', borderColor: '#0e7490' }
+                          : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
+                        {t(pt as TranslationKey)}
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -806,6 +832,46 @@ export default function LandlordDashboard({ account }: Props) {
                   );
                 })}
               </div>
+            </div>
+
+            {/* ── Tenant Preferences / Exemptions (optional) ── */}
+            <div className="rounded-3xl p-5 space-y-4" style={{ background: 'var(--glass-card)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid var(--glass-border)' }}>
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" style={{ color: 'var(--warning)' }} />
+                <h3 className="text-sm font-bold" style={{ color: 'var(--ink)' }}>{t('preferences_label')}</h3>
+              </div>
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>{t('preferences_hint')}</p>
+
+              {/* Quick-pick tags */}
+              <div className="flex flex-wrap gap-2">
+                {(['no_couples', 'no_children', 'no_pets', 'no_students', 'no_smoking',
+                   'professionals_only', 'females_only', 'males_only'] as const).map(tag => {
+                  const active = form.preferenceTags.includes(tag);
+                  return (
+                    <motion.button key={tag} whileTap={{ scale: 0.93 }}
+                      onClick={() => setForm(f => ({
+                        ...f,
+                        preferenceTags: active ? f.preferenceTags.filter(x => x !== tag) : [...f.preferenceTags, tag],
+                      }))}
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold border transition-all"
+                      style={active
+                        ? { background: 'rgba(242,180,90,0.25)', color: 'var(--warning)', borderColor: 'rgba(242,180,90,0.5)' }
+                        : { background: 'var(--surface-strong)', color: 'var(--muted)', borderColor: 'var(--border)' }}>
+                      {t(tag)}
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              {/* Free-text exemption note */}
+              <textarea
+                value={form.preferences}
+                onChange={e => setForm(f => ({ ...f, preferences: e.target.value }))}
+                placeholder={t('preferences_placeholder')}
+                rows={2}
+                className="w-full px-4 py-3 rounded-2xl border text-sm outline-none resize-none"
+                style={{ background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--ink)' }}
+              />
             </div>
             </>)}
 

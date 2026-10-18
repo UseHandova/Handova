@@ -72,7 +72,7 @@ async function call(a: PrivateKeyAccount | null, method: string, path: string, b
   const headers: Record<string, string> = body ? { 'Content-Type': 'application/json' } : {};
   if (a) headers.Authorization = `Bearer ${await session(a)}`;
   const res = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  return { status: res.status, body: await res.json() as Record<string, any> };
+  return { status: res.status, body: await res.json() as Record<string, unknown> };
 }
 
 beforeAll(async () => {

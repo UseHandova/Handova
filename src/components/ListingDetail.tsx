@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, ChevronLeft, ChevronRight, BadgeCheck, ShieldAlert, ShieldCheck, MapPin, Map,
-  Share2, Heart, Star, Home, Play, Info, MessageCircle, FileCheck2, FileQuestion,
+  Share2, Heart, Star, Home, Play, Info, MessageCircle, FileCheck2, FileQuestion, AlertCircle,
 } from 'lucide-react';
 import { formatNaira } from '@/lib/naira';
 import { useLang } from '@/lib/LangContext';
@@ -215,6 +215,30 @@ export default function ListingDetail({ listing, saved, onToggleSave, stats, onC
               {listing.amenities.map(a => (
                 <span key={a} className="text-xs px-3 py-1.5 rounded-full" style={{ background: 'var(--surface-muted)', color: 'var(--ink-2)', border: '1px solid var(--border)' }}>{a}</span>
               ))}
+            </div>
+          )}
+
+          {/* Landlord preferences / exemptions */}
+          {(listing.preferences || (listing.preferenceTags && listing.preferenceTags.length > 0)) && (
+            <div className="rounded-2xl p-4 space-y-2" style={{ background: 'rgba(242,180,90,0.08)', border: '1px solid rgba(242,180,90,0.30)' }}>
+              <p className="text-sm font-semibold flex items-center gap-1.5" style={{ color: 'var(--ink)' }}>
+                <AlertCircle className="w-4 h-4" style={{ color: 'var(--warning)' }} />
+                {t('tenant_preferences')}
+              </p>
+              {listing.preferenceTags && listing.preferenceTags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {listing.preferenceTags.map(tag => (
+                    <span key={tag} className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: 'rgba(242,180,90,0.15)', color: 'var(--warning)', border: '1px solid rgba(242,180,90,0.35)' }}>
+                      {t(tag as Parameters<typeof t>[0])}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {listing.preferences && (
+                <p className="text-sm" style={{ color: 'var(--ink-2)' }}>{listing.preferences}</p>
+              )}
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>{t('preferences_notice')}</p>
             </div>
           )}
 

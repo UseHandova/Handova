@@ -39,6 +39,11 @@ export type TranslationKey =
   | 'wallet_label' | 'property_type_label' | 'all_types'
   | 'single_room' | 'self_contain' | 'mini_flat' | 'two_bed' | 'three_bed'
   | 'four_bed_plus' | 'duplex' | 'bungalow' | 'penthouse' | 'shop_with_room'
+  | 'open_shop' | 'shop_office' | 'warehouse' | 'commercial_space'
+  | 'preferences_label' | 'preferences_placeholder' | 'preferences_hint'
+  | 'no_couples' | 'no_children' | 'no_pets' | 'no_students' | 'no_smoking'
+  | 'professionals_only' | 'females_only' | 'males_only' | 'christians_only' | 'muslims_only'
+  | 'tenant_preferences' | 'preferences_notice'
   | 'per_year' | 'per_month' | 'monthly_label' | 'yearly_label'
   | 'contact_landlord' | 'save_listing' | 'saved' | 'book_inspection'
   | 'inspection_note' | 'verified_landlord' | 'area_label' | 'custom_area_placeholder'
@@ -198,6 +203,17 @@ const EN: Translations = {
   admin_dashboard: 'Admin Dashboard', total_users: 'Total Users', total_listings: 'Total Listings',
   total_escrows: 'Total Escrows', flagged_accounts: 'Flagged', pending_verifications: 'Pending Verifications',
   resolve_dispute: 'Resolve Dispute', admin_only: 'Admin only', approve: 'Approve', reject: 'Reject', flag_user: 'Flag User',
+  // Shop / commercial types
+  open_shop: 'Open Shop', shop_office: 'Shop + Office', warehouse: 'Warehouse', commercial_space: 'Commercial Space',
+  // Landlord preferences
+  preferences_label: 'Tenant Preferences (Optional)',
+  preferences_placeholder: 'e.g. No pets, professionals only…',
+  preferences_hint: 'Be specific — this helps the right tenants find you.',
+  no_couples: 'No Couples', no_children: 'No Children', no_pets: 'No Pets',
+  no_students: 'No Students', no_smoking: 'No Smoking',
+  professionals_only: 'Working Professionals Only', females_only: 'Females Only',
+  males_only: 'Males Only', christians_only: 'Christians Only', muslims_only: 'Muslims Only',
+  tenant_preferences: 'Landlord Preferences', preferences_notice: 'This landlord has stated preferences for tenants.',
 };
 
 const YO: Translations = {
@@ -325,6 +341,15 @@ const YO: Translations = {
   admin_dashboard: 'Dasibodu Iṣakoso', total_users: 'Lapapọ Awọn Olumulo', total_listings: 'Lapapọ Awọn Atokọ',
   total_escrows: 'Lapapọ Escrow', flagged_accounts: 'Awọn isamisi', pending_verifications: 'Awọn Jijẹrisi n Duro',
   resolve_dispute: 'Yanju Ariyanjiyan', admin_only: 'Iṣakoso nikan', approve: 'Fọwọsi', reject: 'Kọ', flag_user: 'Samisi Olumulo',
+  open_shop: 'Ile-itaja Ṣiṣi', shop_office: 'Ile-itaja + Ọfiisi', warehouse: 'Ile Ipamọ', commercial_space: 'Aaye Iṣowo',
+  preferences_label: 'Awọn Ayanfẹ Agbateniyan (Aṣayan)',
+  preferences_placeholder: 'fun apẹẹrẹ Ko si ẹranko ile, awọn akosemose nikan…',
+  preferences_hint: 'Jẹ pato — eyi ṣe iranlọwọ awọn agbateniyan to tọ lati wa ọ.',
+  no_couples: 'Ko si Awọn Tọkọtaya', no_children: 'Ko si Awọn Ọmọde', no_pets: 'Ko si Ẹranko Ile',
+  no_students: 'Ko si Awọn Ọmọ ile-iwe', no_smoking: 'Ko si Siga',
+  professionals_only: 'Awọn Akosemose Nikan', females_only: 'Awọn Obinrin Nikan',
+  males_only: 'Awọn Okunrin Nikan', christians_only: 'Awọn Kristiani Nikan', muslims_only: 'Awọn Musulumi Nikan',
+  tenant_preferences: 'Awọn Ayanfẹ Onile', preferences_notice: 'Onile yii ti ṣalaye awọn ayanfẹ fun awọn agbateniyan.',
 };
 
 const PCM: Translations = {
@@ -452,6 +477,15 @@ const PCM: Translations = {
   admin_dashboard: 'Admin Dashboard', total_users: 'Total Users', total_listings: 'Total Listings',
   total_escrows: 'Total Escrows', flagged_accounts: 'Flagged', pending_verifications: 'Pending Verifications',
   resolve_dispute: 'Settle Dispute', admin_only: 'Admin only', approve: 'Approve', reject: 'Reject', flag_user: 'Flag User',
+  open_shop: 'Open Shop', shop_office: 'Shop + Office', warehouse: 'Warehouse', commercial_space: 'Commercial Space',
+  preferences_label: 'Tenant Preferences (Optional)',
+  preferences_placeholder: 'e.g. No pets, working people only…',
+  preferences_hint: 'Be specific — dis go help di right tenants find you.',
+  no_couples: 'No Couples', no_children: 'No Children', no_pets: 'No Pets',
+  no_students: 'No Students', no_smoking: 'No Smoking',
+  professionals_only: 'Working People Only', females_only: 'Women Only',
+  males_only: 'Men Only', christians_only: 'Christians Only', muslims_only: 'Muslims Only',
+  tenant_preferences: 'Landlord Preferences', preferences_notice: 'Dis landlord don talk wetin dem want for tenant.',
 };
 
 const IG: Translations = {
@@ -579,6 +613,15 @@ const IG: Translations = {
   admin_dashboard: 'Dashibọọdụ Onye Nlọchị', total_users: 'Ndị ọrụ niile', total_listings: 'Ndekọ niile',
   total_escrows: 'Escrow niile', flagged_accounts: 'Etinye akara', pending_verifications: 'Nkwado na-atọ ụzọ',
   resolve_dispute: 'Dozie Esemokwu', admin_only: 'Onye nlọchị naanị', approve: 'Kwado', reject: 'Jụ', flag_user: 'Tinye Akara Onye Ọrụ',
+  open_shop: 'Ụlọ ahịa Mepere', shop_office: 'Ụlọ ahịa + Ọfịs', warehouse: 'Ụlọ nchekwa', commercial_space: 'Ebe Azụmahịa',
+  preferences_label: 'Nhọrọ Onye Ọbịa (Ọ dị mma)',
+  preferences_placeholder: 'dịka Ọ dịghị anụ ụlọ, ndị ọrụ naanị…',
+  preferences_hint: 'Bụrụ nke pụtara ìhè — nke a na-enyere ndị ọbịa kwesịrị ekwesị ịchọta gị.',
+  no_couples: 'Ọ dịghị ndị di na nwunye', no_children: 'Ọ dịghị ụmụ', no_pets: 'Ọ dịghị anụ ụlọ',
+  no_students: 'Ọ dịghị ụmụ akwụkwọ', no_smoking: 'Ọ dịghị ịṅụ sịga',
+  professionals_only: 'Ndị ọrụ Naanị', females_only: 'Ụmụ nwanyị Naanị',
+  males_only: 'Ụmụ nwoke Naanị', christians_only: 'Ndị Kraịst Naanị', muslims_only: 'Ndị Mụzụlụm Naanị',
+  tenant_preferences: 'Nhọrọ Onye Nwe Ụlọ', preferences_notice: 'Onye nwe ụlọ a kọọrọ ihe ha chọrọ maka onye ọbịa.',
 };
 
 const HA: Translations = {
@@ -706,6 +749,15 @@ const HA: Translations = {
   admin_dashboard: 'Dashboard ɗin Gudanarwa', total_users: 'Jimillar Masu Amfani', total_listings: 'Jimillar Jeri',
   total_escrows: 'Jimillar Escrow', flagged_accounts: 'An yi alama', pending_verifications: 'Tabbatarwa na jira',
   resolve_dispute: 'Warware Jayayya', admin_only: 'Gudanarwa kawai', approve: 'Amince', reject: 'Ƙi', flag_user: 'Yi Alama Mai Amfani',
+  open_shop: 'Shago Buɗe', shop_office: 'Shago + Ofis', warehouse: 'Gidan Ajiya', commercial_space: 'Wurin Kasuwanci',
+  preferences_label: 'Zaɓukan Mai Haya (Zabi)',
+  preferences_placeholder: 'misali Babu dabbobi, ƙwararru kawai…',
+  preferences_hint: 'Kasance takamaiman — wannan yana taimaka wa masu haya daidai su sami ka.',
+  no_couples: 'Babu Ma\'aurata', no_children: 'Babu Yara', no_pets: 'Babu Dabbobi',
+  no_students: 'Babu Ɗalibai', no_smoking: 'Babu Shan Taba',
+  professionals_only: 'Ƙwararru Kawai', females_only: 'Mata Kawai',
+  males_only: 'Maza Kawai', christians_only: 'Kiristoci Kawai', muslims_only: 'Musulmai Kawai',
+  tenant_preferences: 'Zaɓukan Mai Gida', preferences_notice: 'Mai gida ya bayyana abin da yake so ga masu haya.',
 };
 
 export const TRANSLATIONS: Record<LangCode, Translations> = {
@@ -737,11 +789,17 @@ export const LAGOS_AREAS = [
 ] as const;
 
 // ── Property Types ────────────────────────────────────────────────────────────
-export const PROPERTY_TYPES = [
+export const RESIDENTIAL_TYPES = [
   'single_room', 'self_contain', 'mini_flat',
   'two_bed', 'three_bed', 'four_bed_plus',
   'duplex', 'bungalow', 'penthouse', 'shop_with_room',
 ] as const;
+
+export const COMMERCIAL_TYPES = [
+  'open_shop', 'shop_office', 'warehouse', 'commercial_space',
+] as const;
+
+export const PROPERTY_TYPES = [...RESIDENTIAL_TYPES, ...COMMERCIAL_TYPES] as const;
 export type PropertyType = typeof PROPERTY_TYPES[number];
 
 // ── Voice input (Web Speech API) ─────────────────────────────────────────────

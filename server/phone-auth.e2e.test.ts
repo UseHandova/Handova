@@ -28,9 +28,9 @@ const PHONE = '0803 123 4567', E164 = '2348031234567';
 
 async function post(path: string, body: unknown) {
   const res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  return { status: res.status, body: await res.json() as Record<string, any> };
+  return { status: res.status, body: await res.json() as Record<string, unknown> };
 }
-const status = async (id: string) => (await fetch(`${base}/api/phone/status/${id}`)).json() as Promise<Record<string, any>>;
+const status = async (id: string) => (await fetch(`${base}/api/phone/status/${id}`)).json() as Promise<Record<string, unknown>>;
 /** Start a login and "send" the WhatsApp message from `from`. */
 async function verify(from = E164) {
   const s = (await post('/api/phone/start', { phone: PHONE })).body;
@@ -206,7 +206,7 @@ describe('SMS codes, for numbers not on WhatsApp', () => {
     await post('/api/phone/start', { phone: SMS_PHONE, channel: 'sms' });
     const id = (db().query("SELECT id FROM phone_challenges WHERE phone = ? AND channel = 'sms' ORDER BY created_at DESC").get(SMS_E164) as { id: string }).id;
     const bad = smsCode() === '123456' ? '654321' : '123456';
-    let last: Record<string, any> = {};
+    let last: Record<string, unknown> = {};
     for (let i = 0; i < 5; i++) last = (await post('/api/phone/verify', { challengeId: id, code: bad })).body;
     expect(last.code).toBe('too_many');
     expect((await post('/api/phone/verify', { challengeId: id, code: smsCode() })).body.code).toBe('too_many'); // even the right one

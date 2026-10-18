@@ -65,14 +65,14 @@ async function call(a: PrivateKeyAccount | null, path: string, body?: unknown) {
   const headers: Record<string, string> = body ? { 'Content-Type': 'application/json' } : {};
   if (a) headers.Authorization = `Bearer ${await session(a)}`;
   const res = await fetch(base + path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined });
-  return { status: res.status, body: await res.json().catch(() => ({})) as Record<string, any>, res };
+  return { status: res.status, body: await res.json().catch(() => ({})) as Record<string, unknown>, res };
 }
 async function sendReceipt(a: PrivateKeyAccount, fields: Record<string, string>, files = [{ name: 'receipt.jpg', type: 'image/jpeg', bytes: 3000 }]) {
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) form.append(k, v);
   for (const f of files) form.append('files', new File([new Uint8Array(f.bytes).fill(5)], f.name, { type: f.type }));
   const res = await fetch(`${base}/api/cash-payments`, { method: 'POST', headers: { Authorization: `Bearer ${await session(a)}` }, body: form });
-  return { status: res.status, body: await res.json() as Record<string, any> };
+  return { status: res.status, body: await res.json() as Record<string, unknown> };
 }
 /** Book → approve → visit happens → both confirm. Returns the inspection id. */
 async function inspected(tenant: PrivateKeyAccount, name: string, phone: string) {

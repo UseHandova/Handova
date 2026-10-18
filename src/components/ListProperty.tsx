@@ -38,7 +38,7 @@ export default function ListProperty({ account }: Props) {
     parseFloat(form.rentNgn) > 0 &&
     parseFloat(form.depositNgn) > 0;
 
-  async function handleSubmit() {
+  function handleSubmit() {
     if (!isValid) return;
     if (!ESCROW_ADDRESS) {
       toast.error('Contract not deployed yet — set VITE_ESCROW_ADDRESS first.');

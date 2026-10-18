@@ -35,7 +35,7 @@ async function token(over: { aud?: string; iss?: string; phone?: string | null; 
 }
 async function post(path: string, body: unknown) {
   const res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  return { status: res.status, body: await res.json() as Record<string, any> };
+  return { status: res.status, body: await res.json() as Record<string, unknown> };
 }
 
 beforeAll(async () => {
