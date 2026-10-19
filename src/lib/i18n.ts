@@ -40,6 +40,7 @@ export type TranslationKey =
   | 'single_room' | 'self_contain' | 'mini_flat' | 'two_bed' | 'three_bed'
   | 'four_bed_plus' | 'duplex' | 'bungalow' | 'penthouse' | 'shop_with_room'
   | 'open_shop' | 'shop_office' | 'warehouse' | 'commercial_space'
+  | 'residential' | 'commercial'
   | 'preferences_label' | 'preferences_placeholder' | 'preferences_hint'
   | 'no_couples' | 'no_children' | 'no_pets' | 'no_students' | 'no_smoking'
   | 'professionals_only' | 'females_only' | 'males_only' | 'christians_only' | 'muslims_only'
@@ -229,6 +230,7 @@ const EN: Translations = {
   fee_in_escrow: 'Fee held in escrow until call confirmed', caretaker_paid_after_call: 'Caretaker is paid once both sides confirm the call happened.',
   // Shop / commercial types
   open_shop: 'Open Shop', shop_office: 'Shop + Office', warehouse: 'Warehouse', commercial_space: 'Commercial Space',
+  residential: 'Residential', commercial: 'Commercial',
   // Landlord preferences
   preferences_label: 'Tenant Preferences (Optional)',
   preferences_placeholder: 'e.g. No pets, professionals only…',
@@ -388,6 +390,7 @@ const YO: Translations = {
   professionals_only: 'Awọn Akosemose Nikan', females_only: 'Awọn Obinrin Nikan',
   males_only: 'Awọn Okunrin Nikan', christians_only: 'Awọn Kristiani Nikan', muslims_only: 'Awọn Musulumi Nikan',
   tenant_preferences: 'Awọn Ayanfẹ Onile', preferences_notice: 'Onile yii ti ṣalaye awọn ayanfẹ fun awọn agbateniyan.',
+  residential: 'Ibugbe', commercial: 'Iṣowo',
 };
 
 const PCM: Translations = {
@@ -538,6 +541,7 @@ const PCM: Translations = {
   professionals_only: 'Working People Only', females_only: 'Women Only',
   males_only: 'Men Only', christians_only: 'Christians Only', muslims_only: 'Muslims Only',
   tenant_preferences: 'Landlord Preferences', preferences_notice: 'Dis landlord don talk wetin dem want for tenant.',
+  residential: 'Residential', commercial: 'Commercial',
 };
 
 const IG: Translations = {
@@ -688,6 +692,7 @@ const IG: Translations = {
   professionals_only: 'Ndị ọrụ Naanị', females_only: 'Ụmụ nwanyị Naanị',
   males_only: 'Ụmụ nwoke Naanị', christians_only: 'Ndị Kraịst Naanị', muslims_only: 'Ndị Mụzụlụm Naanị',
   tenant_preferences: 'Nhọrọ Onye Nwe Ụlọ', preferences_notice: 'Onye nwe ụlọ a kọọrọ ihe ha chọrọ maka onye ọbịa.',
+  residential: 'Ebe obibi', commercial: 'Azụmahịa',
 };
 
 const HA: Translations = {
@@ -838,6 +843,7 @@ const HA: Translations = {
   professionals_only: 'Ƙwararru Kawai', females_only: 'Mata Kawai',
   males_only: 'Maza Kawai', christians_only: 'Kiristoci Kawai', muslims_only: 'Musulmai Kawai',
   tenant_preferences: 'Zaɓukan Mai Gida', preferences_notice: 'Mai gida ya bayyana abin da yake so ga masu haya.',
+  residential: 'Mazauni', commercial: 'Kasuwanci',
 };
 
 export const TRANSLATIONS: Record<LangCode, Translations> = {

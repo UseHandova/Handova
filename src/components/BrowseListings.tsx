@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, SlidersHorizontal, X, Bell, Gift, Loader2, Heart } from 'lucide-react';
 import type { SmartAccount } from 'viem/account-abstraction';
-import { LAGOS_AREAS, PROPERTY_TYPES, COMMERCIAL_TYPES, type PropertyType } from '@/lib/i18n';
+import { LAGOS_AREAS, PROPERTY_TYPES, RESIDENTIAL_TYPES, COMMERCIAL_TYPES, type PropertyType } from '@/lib/i18n';
 import { useLang } from '@/lib/LangContext';
 import { nairaToUsdc } from '@/lib/naira';
 import { useChainState, useHiddenListings, type ChainListing } from '@/lib/chain';
@@ -77,9 +77,13 @@ function fromChain(l: ChainListing): Listing {
     : 'two_bed';
   const location = m.location || 'Lagos';
   const rooms = m.rooms ?? 1;
+  const isCommercial = (COMMERCIAL_TYPES as readonly string[]).includes(propertyType);
+  const title = isCommercial
+    ? `${propertyType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} in ${location}`
+    : `${rooms}-bedroom in ${location}`;
   return {
     id: l.id,
-    title: `${rooms}-bedroom in ${location}`,
+    title,
     address: m.address || location,
     lat: m.lat ?? LAGOS_CENTER.lat,
     lng: m.lng ?? LAGOS_CENTER.lng,
@@ -304,13 +308,13 @@ export default function BrowseListings({ account }: Props) {
                           style={listingCategory === cat
                             ? { background: cat === 'commercial' ? '#0e7490' : 'var(--accent)', color: 'white' }
                             : { color: 'var(--muted)' }}>
-                          {cat === 'all' ? t('all_types') : cat === 'commercial' ? '🏪 Commercial' : '🏠 Residential'}
+                          {cat === 'all' ? t('all_types') : cat === 'commercial' ? `🏪 ${t('commercial')}` : `🏠 ${t('residential')}`}
                         </button>
                       ))}
                     </div>
                     <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted)' }}>{t('property_type_label')}</p>
                     <div className="flex flex-wrap gap-2">
-                      {(['all', ...(listingCategory === 'commercial' ? COMMERCIAL_TYPES : listingCategory === 'residential' ? [] : PROPERTY_TYPES)] as const).map(pt => (
+                      {(['all', ...(listingCategory === 'commercial' ? COMMERCIAL_TYPES : listingCategory === 'residential' ? RESIDENTIAL_TYPES : PROPERTY_TYPES)] as const).map(pt => (
                         <button key={pt} onClick={() => setPropertyType(pt)} className="px-3 py-1.5 rounded-full text-sm" style={chip(propertyType === pt)}>
                           {pt === 'all' ? t('all_types') : t(pt as Parameters<typeof t>[0])}
                         </button>

@@ -398,7 +398,7 @@ export default function LandlordDashboard({ account }: Props) {
         m: mediaToNames(uploaded),
         ...(pin && { lat: Math.round(pin.lat * 1e5) / 1e5, lng: Math.round(pin.lng * 1e5) / 1e5 }),
         ...(normalisePhone(form.phone) && { phone: normalisePhone(form.phone) }),
-        ...(form.preferences.trim() && { preferences: form.preferences.trim() }),
+        ...(form.preferences.trim() && { preferences: form.preferences.trim().slice(0, 200) }),
         ...(form.preferenceTags.length > 0 && { preferenceTags: form.preferenceTags }),
       });
 
@@ -716,6 +716,7 @@ export default function LandlordDashboard({ account }: Props) {
 
             {/* ── Step 3: Details ── */}
             {step === 2 && (<>
+            {!(COMMERCIAL_TYPES as readonly string[]).includes(form.propertyType) && (
             <div>
               <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>Bedrooms</label>
               <div className="flex gap-2">
@@ -736,6 +737,7 @@ export default function LandlordDashboard({ account }: Props) {
                 ))}
               </div>
             </div>
+            )}
 
             {/* ── Property Type ── */}
             <div>
@@ -744,7 +746,7 @@ export default function LandlordDashboard({ account }: Props) {
               </label>
               <div className="space-y-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--muted)' }}>🏠 Residential</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--muted)' }}>🏠 {t('residential')}</p>
                   <div className="flex flex-wrap gap-2">
                     {(RESIDENTIAL_TYPES as readonly PropertyType[]).map(pt => (
                       <motion.button key={pt} whileTap={{ scale: 0.93 }}
@@ -759,7 +761,7 @@ export default function LandlordDashboard({ account }: Props) {
                   </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#0e7490' }}>🏪 Commercial</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#0e7490' }}>🏪 {t('commercial')}</p>
                   <div className="flex flex-wrap gap-2">
                     {(COMMERCIAL_TYPES as readonly PropertyType[]).map(pt => (
                       <motion.button key={pt} whileTap={{ scale: 0.93 }}
@@ -776,7 +778,8 @@ export default function LandlordDashboard({ account }: Props) {
               </div>
             </div>
 
-            {/* ── Furnishing ── */}
+            {/* ── Furnishing (residential only) ── */}
+            {!(COMMERCIAL_TYPES as readonly string[]).includes(form.propertyType) && (
             <div>
               <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                 {t('furnishing_label')}
@@ -794,6 +797,7 @@ export default function LandlordDashboard({ account }: Props) {
                 ))}
               </div>
             </div>
+            )}
 
             {/* ── Description ── */}
             <div id="field-description" className="scroll-mt-24">
@@ -866,12 +870,16 @@ export default function LandlordDashboard({ account }: Props) {
               {/* Free-text exemption note */}
               <textarea
                 value={form.preferences}
-                onChange={e => setForm(f => ({ ...f, preferences: e.target.value }))}
+                onChange={e => setForm(f => ({ ...f, preferences: e.target.value.slice(0, 200) }))}
                 placeholder={t('preferences_placeholder')}
+                maxLength={200}
                 rows={2}
                 className="w-full px-4 py-3 rounded-2xl border text-sm outline-none resize-none"
                 style={{ background: 'var(--surface-strong)', borderColor: 'var(--border)', color: 'var(--ink)' }}
               />
+              <p className="text-[11px] text-right mt-1" style={{ color: form.preferences.length > 180 ? 'var(--warning)' : 'var(--subtle)' }}>
+                {form.preferences.length}/200
+              </p>
             </div>
             </>)}
 

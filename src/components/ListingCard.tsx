@@ -11,6 +11,7 @@ import { useLang } from '@/lib/LangContext';
 import { OwnershipPill } from '@/components/OwnershipProof';
 import type { Listing } from '@/components/BrowseListings';
 import { useUi } from '@/lib/i18n-ui';
+import { COMMERCIAL_TYPES } from '@/lib/i18n';
 import ListingSocialProof from '@/components/ListingSocialProof';
 import type { ListingStats } from '@/lib/listing-stats';
 
@@ -121,9 +122,15 @@ export default function ListingCard({ listing, priceMode, saved, onToggleSave, s
 
       {/* Details */}
       <div className="p-4">
-        <p className="text-xs truncate" style={{ color: 'var(--muted)' }}>
-          {listing.location} · {t(listing.propertyType)} · {t(listing.furnishing)}
-        </p>
+        {(() => {
+          const isCommercial = (COMMERCIAL_TYPES as readonly string[]).includes(listing.propertyType);
+          return (
+            <p className="text-xs truncate" style={{ color: 'var(--muted)' }}>
+              {listing.location} · {t(listing.propertyType)}
+              {!isCommercial && <> · {t(listing.furnishing)}</>}
+            </p>
+          );
+        })()}
         <h3 className="font-semibold text-[15px] mt-1 truncate" style={{ color: 'var(--ink)' }}>{listing.title}</h3>
         <p className="mt-2 tabular-nums" style={{ color: 'var(--ink)' }}>
           <span className="text-lg font-bold">{formatNaira(price)}</span>
