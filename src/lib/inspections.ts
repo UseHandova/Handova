@@ -29,6 +29,20 @@ export interface Inspection {
   canPay: boolean;
   /** How the landlord wants the first payment. */
   paymentMethod: 'escrow' | 'cash';
+  /** Whether this is a physical or remote video inspection. */
+  inspectionMode: 'in_person' | 'remote';
+  /** USDC fee for the caretaker (remote only). */
+  remoteFeeUsdc: string;
+  /** Caretaker name/address shown to the tenant. */
+  caretakerAddress: string;
+  /** Video call URL set by the landlord. */
+  videoLink: string;
+  /** When tenant confirmed the video call happened. */
+  tenantCallConfirmedAt: number | null;
+  /** When landlord/caretaker confirmed the video call happened. */
+  landlordCallConfirmedAt: number | null;
+  /** When the caretaker fee was released. */
+  feeReleasedAt: number | null;
   createdAt: number;
   updatedAt: number;
   notified?: boolean;

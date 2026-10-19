@@ -38,6 +38,20 @@ interface Row {
   slot_at: number; tenant_name: string; tenant_phone: string; landlord_phone: string; note: string; landlord_note: string;
   tenant_confirmed_at: number | null; landlord_confirmed_at: number | null; missed_by: string; created_at: number; updated_at: number;
   payment_method: 'escrow' | 'cash';
+  /** 'remote' when the tenant chose a video inspection; 'in_person' (default) for a physical visit. */
+  inspection_mode: 'in_person' | 'remote';
+  /** USDC amount the tenant locks in escrow for the caretaker (remote only). Stored as a float string e.g. "5.00". */
+  remote_fee_usdc: string;
+  /** Address of the caretaker who will run the video inspection. */
+  caretaker_address: string;
+  /** Video call URL provided by the landlord (e.g. a Google Meet link). */
+  video_link: string;
+  /** When the tenant confirmed the video call happened. */
+  tenant_call_confirmed_at: number | null;
+  /** When the caretaker/landlord confirmed the video call happened. */
+  landlord_call_confirmed_at: number | null;
+  /** When the caretaker fee was released (remote only). */
+  fee_released_at: number | null;
 }
 
 const lower = (a: string) => a.toLowerCase();
@@ -82,6 +96,14 @@ export function ensureInspectionsTable() {
   // Added later: how the landlord wants the first payment (escrow unless they choose cash).
   const cols = new Set((db().query('PRAGMA table_info(inspections)').all() as { name: string }[]).map(c => c.name));
   if (!cols.has('payment_method')) db().exec("ALTER TABLE inspections ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'escrow'");
+  // Remote inspection columns (added in v2).
+  if (!cols.has('inspection_mode')) db().exec("ALTER TABLE inspections ADD COLUMN inspection_mode TEXT NOT NULL DEFAULT 'in_person'");
+  if (!cols.has('remote_fee_usdc')) db().exec("ALTER TABLE inspections ADD COLUMN remote_fee_usdc TEXT NOT NULL DEFAULT '0'");
+  if (!cols.has('caretaker_address')) db().exec("ALTER TABLE inspections ADD COLUMN caretaker_address TEXT NOT NULL DEFAULT ''");
+  if (!cols.has('video_link')) db().exec("ALTER TABLE inspections ADD COLUMN video_link TEXT NOT NULL DEFAULT ''");
+  if (!cols.has('tenant_call_confirmed_at')) db().exec("ALTER TABLE inspections ADD COLUMN tenant_call_confirmed_at INTEGER");
+  if (!cols.has('landlord_call_confirmed_at')) db().exec("ALTER TABLE inspections ADD COLUMN landlord_call_confirmed_at INTEGER");
+  if (!cols.has('fee_released_at')) db().exec("ALTER TABLE inspections ADD COLUMN fee_released_at INTEGER");
 }
 
 /** Tenant may pay: both confirmed, or tenant confirmed and the landlord stayed silent past the grace period. */
@@ -102,7 +124,16 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
       tenantName: r.tenant_name, tenantPhone: r.tenant_phone, landlordPhone: r.landlord_phone,
       note: r.note, landlordNote: r.landlord_note,
       tenantConfirmedAt: r.tenant_confirmed_at, landlordConfirmedAt: r.landlord_confirmed_at,
-      missedBy: r.missed_by || null, canPay: canPay(r), paymentMethod: r.payment_method ?? 'escrow', createdAt: r.created_at, updatedAt: r.updated_at,
+      missedBy: r.missed_by || null, canPay: canPay(r), paymentMethod: r.payment_method ?? 'escrow',
+      // Remote inspection fields
+      inspectionMode: (r.inspection_mode ?? 'in_person') as 'in_person' | 'remote',
+      remoteFeeUsdc: r.remote_fee_usdc ?? '0',
+      caretakerAddress: r.caretaker_address ?? '',
+      videoLink: r.video_link ?? '',
+      tenantCallConfirmedAt: r.tenant_call_confirmed_at ?? null,
+      landlordCallConfirmedAt: r.landlord_call_confirmed_at ?? null,
+      feeReleasedAt: r.fee_released_at ?? null,
+      createdAt: r.created_at, updatedAt: r.updated_at,
       ...(notified !== undefined && { notified }),
     };
   };
@@ -166,11 +197,19 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
     const place = str(meta.location, 80) || str(meta.address, 80) || `Listing #${listingId}`;
     const landlordPhone = normalisePhone(meta.phone);
     const now = Date.now();
-    const id = Number(db().query(`INSERT INTO inspections (listing_id, tenant, landlord, place, status, slot_at, tenant_name, tenant_phone, landlord_phone, note, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?)`)
-      .run(String(listingId), lower(me), lower(landlord), place, slot, name, phone, landlordPhone, str(b.note, 300), now, now).lastInsertRowid);
+
+    // Remote inspection fields
+    const mode = b.inspectionMode === 'remote' ? 'remote' : 'in_person';
+    const rawFee = mode === 'remote' ? parseFloat(String(b.remoteFeeUsdc ?? '0')) : 0;
+    const remoteFeeUsdc = (isFinite(rawFee) && rawFee >= 0 && rawFee <= 50 ? rawFee : 0).toFixed(2);
+
+    const id = Number(db().query(`INSERT INTO inspections (listing_id, tenant, landlord, place, status, slot_at, tenant_name, tenant_phone, landlord_phone, note, inspection_mode, remote_fee_usdc, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(String(listingId), lower(me), lower(landlord), place, slot, name, phone, landlordPhone, str(b.note, 300), mode, remoteFeeUsdc, now, now).lastInsertRowid);
+
+    const modeLabel = mode === 'remote' ? ' (remote video inspection)' : '';
     const notified = await tell(landlordPhone,
-      `🏠 Handova: ${name} wants to inspect your property in ${place} on ${lagosTime(slot)}.${b.note ? `\nNote: "${str(b.note, 300)}"` : ''}\nApprove, suggest another time or decline in the app.${open('/landlord')}`);
+      `🏠 Handova: ${name} wants to inspect your property in ${place} on ${lagosTime(slot)}${modeLabel}.${b.note ? `\nNote: "${str(b.note, 300)}"` : ''}\nApprove, suggest another time or decline in the app.${open('/landlord')}`);
     res.json({ ok: true, inspection: view(get(id)!, me, notified) });
   });
 
@@ -188,7 +227,7 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
     const note = str(b.note, 300);
     const now = Date.now();
     const wrongState = (msg: string) => bad(res, 409, msg, 'wrong_state');
-    const landlordOnly = ['approve', 'propose', 'decline', 'payment'], tenantOnly = ['accept', 'reschedule', 'cancel'];
+    const landlordOnly = ['approve', 'propose', 'decline', 'payment', 'set_video'], tenantOnly = ['accept', 'reschedule', 'cancel'];
     if (landlordOnly.includes(action) && isTenant) return bad(res, 403, 'Only the landlord can do this.', 'not_landlord');
     if (tenantOnly.includes(action) && !isTenant) return bad(res, 403, 'Only the tenant can do this.', 'not_tenant');
 
@@ -267,6 +306,39 @@ export function mountInspections(app: Express, config: FeatureConfig | null, not
         notified = await tell(r.tenant_phone, method === 'cash'
           ? `Handova: the landlord in ${r.place} would like to be paid in cash. After you pay, upload the receipt in the app so they can confirm it.${open(`/tenant?visit=${r.listing_id}`)}`
           : `Handova: the landlord in ${r.place} wants the payment through Handova escrow. Your money stays protected until you move in.${open(`/tenant?visit=${r.listing_id}`)}`);
+        break;
+      }
+      case 'set_video': {
+        // Landlord sets (or updates) the video call link and optional caretaker address for a remote inspection.
+        if (r.inspection_mode !== 'remote') return bad(res, 400, 'This inspection is not a remote inspection.', 'not_remote');
+        if (!['requested', 'rescheduled', 'approved'].includes(r.status)) return wrongState('The inspection must be open to set a video link.');
+        const link = str(b.videoLink, 500);
+        if (!link.startsWith('http')) return bad(res, 400, 'Provide a valid video call URL (must start with http).', 'bad_link');
+        const caretaker = str(b.caretakerAddress, 100);
+        next = save(r.id, { video_link: link, caretaker_address: caretaker });
+        notified = await tell(r.tenant_phone,
+          `📹 Handova: the landlord for ${r.place} has set up your remote inspection.\nVideo link: ${link}\n${caretaker ? `Caretaker: ${caretaker}` : ''}${open(`/tenant?visit=${r.listing_id}`)}`);
+        break;
+      }
+      case 'call_confirmed': {
+        // Either side confirms the video call happened.
+        if (r.inspection_mode !== 'remote') return bad(res, 400, 'This inspection is not a remote inspection.', 'not_remote');
+        if (r.status !== 'approved') return wrongState('The inspection must be approved before confirming the call.');
+        const fields: Partial<Row> = isTenant
+          ? { tenant_call_confirmed_at: now }
+          : { landlord_call_confirmed_at: now };
+        const bothCallConfirmed = isTenant ? !!r.landlord_call_confirmed_at : !!r.tenant_call_confirmed_at;
+        if (bothCallConfirmed) {
+          // Both confirmed — mark as completed (fee release happens outside this server in a contract call).
+          fields.status = 'completed';
+          fields.fee_released_at = now;
+        }
+        next = save(r.id, fields);
+        if (bothCallConfirmed) {
+          notified = await tell(isTenant ? r.landlord_phone : r.tenant_phone, isTenant
+            ? `✅ Handova: ${r.tenant_name} confirmed the video inspection for ${r.place}. The caretaker fee will be released. They can now proceed to pay.`
+            : `✅ Handova: the landlord confirmed your video inspection for ${r.place}. You can now review and pay into escrow.${open(`/tenant?visit=${r.listing_id}`)}`);
+        }
         break;
       }
       default:

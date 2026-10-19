@@ -74,7 +74,16 @@ export type TranslationKey =
   | 'request_open' | 'request_resolved' | 'no_requests' | 'mark_resolved'
   | 'admin_dashboard' | 'total_users' | 'total_listings' | 'total_escrows'
   | 'flagged_accounts' | 'pending_verifications' | 'resolve_dispute'
-  | 'admin_only' | 'approve' | 'reject' | 'flag_user';
+  | 'admin_only' | 'approve' | 'reject' | 'flag_user'
+  /* ── Remote inspection ── */
+  | 'remote_inspection' | 'in_person_inspection' | 'choose_inspection_type'
+  | 'remote_inspection_sub' | 'in_person_sub'
+  | 'remote_fee_label' | 'remote_fee_note' | 'remote_fee_goes_to'
+  | 'caretaker_name' | 'caretaker_phone' | 'caretaker_placeholder'
+  | 'video_call_platform' | 'video_link_label' | 'video_link_placeholder'
+  | 'join_video_call' | 'video_call_scheduled' | 'video_call_done'
+  | 'confirm_video_call' | 'remote_inspection_tip'
+  | 'fee_in_escrow' | 'caretaker_paid_after_call';
 
 type Translations = Record<TranslationKey, string>;
 
@@ -203,6 +212,21 @@ const EN: Translations = {
   admin_dashboard: 'Admin Dashboard', total_users: 'Total Users', total_listings: 'Total Listings',
   total_escrows: 'Total Escrows', flagged_accounts: 'Flagged', pending_verifications: 'Pending Verifications',
   resolve_dispute: 'Resolve Dispute', admin_only: 'Admin only', approve: 'Approve', reject: 'Reject', flag_user: 'Flag User',
+  // Remote inspection
+  remote_inspection: 'Remote Inspection', in_person_inspection: 'In-Person Visit',
+  choose_inspection_type: 'How do you want to inspect?',
+  remote_inspection_sub: 'Video call with a caretaker on-site — ideal if you\'re relocating from another city.',
+  in_person_sub: 'Come to the property yourself on a date the landlord agrees to.',
+  remote_fee_label: 'Remote Inspection Fee', remote_fee_note: 'A small fee goes to the on-site caretaker for their time.',
+  remote_fee_goes_to: 'Paid to caretaker after the call. Handova takes nothing.',
+  caretaker_name: 'Caretaker\'s name', caretaker_phone: 'Caretaker\'s phone (WhatsApp)',
+  caretaker_placeholder: 'e.g. Chidi Obi',
+  video_call_platform: 'Video platform', video_link_label: 'Video call link',
+  video_link_placeholder: 'e.g. https://meet.google.com/abc-defg-hij',
+  join_video_call: 'Join Video Call', video_call_scheduled: 'Video call scheduled',
+  video_call_done: 'Mark call as done', confirm_video_call: 'Confirm the call happened',
+  remote_inspection_tip: 'Ask the caretaker to show you: water, power, all rooms, burglary proofs, neighbours and the road outside.',
+  fee_in_escrow: 'Fee held in escrow until call confirmed', caretaker_paid_after_call: 'Caretaker is paid once both sides confirm the call happened.',
   // Shop / commercial types
   open_shop: 'Open Shop', shop_office: 'Shop + Office', warehouse: 'Warehouse', commercial_space: 'Commercial Space',
   // Landlord preferences
@@ -341,6 +365,20 @@ const YO: Translations = {
   admin_dashboard: 'Dasibodu Iṣakoso', total_users: 'Lapapọ Awọn Olumulo', total_listings: 'Lapapọ Awọn Atokọ',
   total_escrows: 'Lapapọ Escrow', flagged_accounts: 'Awọn isamisi', pending_verifications: 'Awọn Jijẹrisi n Duro',
   resolve_dispute: 'Yanju Ariyanjiyan', admin_only: 'Iṣakoso nikan', approve: 'Fọwọsi', reject: 'Kọ', flag_user: 'Samisi Olumulo',
+  remote_inspection: 'Ayẹwo Jijin', in_person_inspection: 'Abẹwo Taara',
+  choose_inspection_type: 'Bawo ni o ṣe fẹ ṣe ayẹwo?',
+  remote_inspection_sub: 'Ipe fidio pẹlu olùtọ́jú lori aaye — dara fun ẹnikẹni ti n gbe lati ilu miiran.',
+  in_person_sub: 'Wa si ile funrararẹ ni ọjọ ti onile gba.',
+  remote_fee_label: 'Owo Ayẹwo Jijin', remote_fee_note: 'Owo kekere lọ si olùtọ́jú fun akoko wọn.',
+  remote_fee_goes_to: 'A san si olùtọ́jú lẹhin ipe. Handova ko gba nkan.',
+  caretaker_name: 'Orukọ olùtọ́jú', caretaker_phone: 'Foonu olùtọ́jú (WhatsApp)',
+  caretaker_placeholder: 'e.g. Chidi Obi',
+  video_call_platform: 'Pẹpẹ fidio', video_link_label: 'Asopọ ipe fidio',
+  video_link_placeholder: 'e.g. https://meet.google.com/abc-defg-hij',
+  join_video_call: 'Wọ Ipe Fidio', video_call_scheduled: 'Ipe fidio ti ṣeto',
+  video_call_done: 'Samisi ipe bi ti pari', confirm_video_call: 'Jẹrisi pe ipe ṣẹlẹ',
+  remote_inspection_tip: 'Beere ki olùtọ́jú fi fun ọ: omi, ina, gbogbo yara, awọn titiipa, awọn aladugbo ati ita.',
+  fee_in_escrow: 'Owo wa ni escrow titi ti a fi jẹrisi ipe', caretaker_paid_after_call: 'A san olùtọ́jú ni kete ti awọn mejeji jẹrisi ipe.',
   open_shop: 'Ile-itaja Ṣiṣi', shop_office: 'Ile-itaja + Ọfiisi', warehouse: 'Ile Ipamọ', commercial_space: 'Aaye Iṣowo',
   preferences_label: 'Awọn Ayanfẹ Agbateniyan (Aṣayan)',
   preferences_placeholder: 'fun apẹẹrẹ Ko si ẹranko ile, awọn akosemose nikan…',
@@ -477,6 +515,20 @@ const PCM: Translations = {
   admin_dashboard: 'Admin Dashboard', total_users: 'Total Users', total_listings: 'Total Listings',
   total_escrows: 'Total Escrows', flagged_accounts: 'Flagged', pending_verifications: 'Pending Verifications',
   resolve_dispute: 'Settle Dispute', admin_only: 'Admin only', approve: 'Approve', reject: 'Reject', flag_user: 'Flag User',
+  remote_inspection: 'Remote Inspection', in_person_inspection: 'Go There Yourself',
+  choose_inspection_type: 'How you wan inspect?',
+  remote_inspection_sub: 'Video call with person wey dey the house — good for people wey dey another city.',
+  in_person_sub: 'Go see the house yourself on a day the landlord agree.',
+  remote_fee_label: 'Remote Inspection Fee', remote_fee_note: 'Small fee go to the person wey go show you around.',
+  remote_fee_goes_to: 'E go pay the person after call. Handova no take anything.',
+  caretaker_name: 'Caretaker name', caretaker_phone: 'Caretaker phone (WhatsApp)',
+  caretaker_placeholder: 'e.g. Chidi Obi',
+  video_call_platform: 'Video platform', video_link_label: 'Video call link',
+  video_link_placeholder: 'e.g. https://meet.google.com/abc-defg-hij',
+  join_video_call: 'Join Video Call', video_call_scheduled: 'Video call don set',
+  video_call_done: 'Mark call as done', confirm_video_call: 'Confirm say call happen',
+  remote_inspection_tip: 'Ask the person to show you: water, light, all rooms, doors, neighbours and road outside.',
+  fee_in_escrow: 'Fee dey escrow until call confirm', caretaker_paid_after_call: 'Person go collect money once both sides confirm say call happen.',
   open_shop: 'Open Shop', shop_office: 'Shop + Office', warehouse: 'Warehouse', commercial_space: 'Commercial Space',
   preferences_label: 'Tenant Preferences (Optional)',
   preferences_placeholder: 'e.g. No pets, working people only…',
@@ -613,6 +665,20 @@ const IG: Translations = {
   admin_dashboard: 'Dashibọọdụ Onye Nlọchị', total_users: 'Ndị ọrụ niile', total_listings: 'Ndekọ niile',
   total_escrows: 'Escrow niile', flagged_accounts: 'Etinye akara', pending_verifications: 'Nkwado na-atọ ụzọ',
   resolve_dispute: 'Dozie Esemokwu', admin_only: 'Onye nlọchị naanị', approve: 'Kwado', reject: 'Jụ', flag_user: 'Tinye Akara Onye Ọrụ',
+  remote_inspection: 'Nlele Site na Ịkpo Okwu', in_person_inspection: 'Gaa Ebe Ahụ Onwe Gị',
+  choose_inspection_type: 'Kedu ka ị chọrọ ilele?',
+  remote_inspection_sub: 'Ịkpo okwu vidiyo na onye nlekọ n\'ebe ahụ — dị mma maka ndị na-abara Lagos.',
+  in_person_sub: 'Gaa hụ ụlọ onwe gị n\'ụbọchị onye nwe ụlọ kwetara.',
+  remote_fee_label: 'Ego Nlele Anya Anya', remote_fee_note: 'Obere ego gaa onye nlekọ maka oge ha.',
+  remote_fee_goes_to: 'A kwụọ onye nlekọ ụgwọ mgbe ịkpo okwu gasịrị. Handova anaghị ewe ihe.',
+  caretaker_name: 'Aha onye nlekọ', caretaker_phone: 'Ekwenti onye nlekọ (WhatsApp)',
+  caretaker_placeholder: 'e.g. Chidi Obi',
+  video_call_platform: 'Ngwa vidiyo', video_link_label: 'Njikọ ịkpo okwu vidiyo',
+  video_link_placeholder: 'e.g. https://meet.google.com/abc-defg-hij',
+  join_video_call: 'Sonye Ịkpo Okwu Vidiyo', video_call_scheduled: 'Ịkpo okwu vidiyo atọnyere',
+  video_call_done: 'Rịba ama ịkpo okwu dị njikere', confirm_video_call: 'Kọnfọm na ịkpo okwu mere',
+  remote_inspection_tip: 'Rịọ onye nlekọ ka o gosiputara gị: mmiri, ọkụ, ụlọ niile, ọnụ ụzọ, ndị agbata obi na okporo ámá.',
+  fee_in_escrow: 'Ego nọ n\'escrow ruo mgbe ịkpo okwu akọnfọmara', caretaker_paid_after_call: 'A kwụọ onye nlekọ ụgwọ ozugbo ha abụọ kọnfọmara ịkpo okwu.',
   open_shop: 'Ụlọ ahịa Mepere', shop_office: 'Ụlọ ahịa + Ọfịs', warehouse: 'Ụlọ nchekwa', commercial_space: 'Ebe Azụmahịa',
   preferences_label: 'Nhọrọ Onye Ọbịa (Ọ dị mma)',
   preferences_placeholder: 'dịka Ọ dịghị anụ ụlọ, ndị ọrụ naanị…',
@@ -749,6 +815,20 @@ const HA: Translations = {
   admin_dashboard: 'Dashboard ɗin Gudanarwa', total_users: 'Jimillar Masu Amfani', total_listings: 'Jimillar Jeri',
   total_escrows: 'Jimillar Escrow', flagged_accounts: 'An yi alama', pending_verifications: 'Tabbatarwa na jira',
   resolve_dispute: 'Warware Jayayya', admin_only: 'Gudanarwa kawai', approve: 'Amince', reject: 'Ƙi', flag_user: 'Yi Alama Mai Amfani',
+  remote_inspection: 'Duban Gida Ta Nesa', in_person_inspection: 'Je Kai Tsaye',
+  choose_inspection_type: 'Ta yaya kake son dubawa?',
+  remote_inspection_sub: 'Kiran bidiyo tare da mai kula a wurin — yana da kyau ga mutanen da suke wani gari.',
+  in_person_sub: 'Je ga gida da kanka a ranar da mai gida ya yarda.',
+  remote_fee_label: 'Kuɗin Duban Gida Ta Nesa', remote_fee_note: 'Ƙaramin kuɗi zai je mai kula don lokacin su.',
+  remote_fee_goes_to: 'Ana biya mai kula bayan kira. Handova ba ya ɗaukar komai.',
+  caretaker_name: 'Sunan mai kula', caretaker_phone: 'Waya mai kula (WhatsApp)',
+  caretaker_placeholder: 'e.g. Chidi Obi',
+  video_call_platform: 'Dandali bidiyo', video_link_label: 'Haɗin kiran bidiyo',
+  video_link_placeholder: 'e.g. https://meet.google.com/abc-defg-hij',
+  join_video_call: 'Shiga Kiran Bidiyo', video_call_scheduled: 'An tsara kiran bidiyo',
+  video_call_done: 'Yiwa kira alama cewa ya ƙare', confirm_video_call: 'Tabbatar cewa kiran ya faru',
+  remote_inspection_tip: 'Roƙa mai kula ya nuna maka: ruwa, wuta, dukkan dakuna, ƙullaye, maƙwabta da hanya waje.',
+  fee_in_escrow: 'Kuɗi yana cikin escrow har an tabbatar kira', caretaker_paid_after_call: 'Ana biya mai kula nan da nan da bangarori biyu suka tabbatar kiran.',
   open_shop: 'Shago Buɗe', shop_office: 'Shago + Ofis', warehouse: 'Gidan Ajiya', commercial_space: 'Wurin Kasuwanci',
   preferences_label: 'Zaɓukan Mai Haya (Zabi)',
   preferences_placeholder: 'misali Babu dabbobi, ƙwararru kawai…',

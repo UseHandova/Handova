@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { CHAIN_ID } from '@/lib/network';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, MessagesSquare, ShieldCheck, X, XCircle, AlertTriangle,
+  CalendarCheck, CalendarPlus, CheckCircle2, Clock, Eye, Loader2, MapPin, MessageCircle, MessagesSquare, ShieldCheck, X, XCircle, AlertTriangle, Video, User, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatNaira, formatUsdc, USDC_TO_NGN } from '@/lib/naira';
@@ -114,19 +114,31 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [checks, setChecks] = useState([false, false, false]);
   const [paid, setPaid] = useState(false);
+  const [inspectionMode, setInspectionMode] = useState<'in_person' | 'remote'>('in_person');
+  const [remoteFeeUsdc, setRemoteFeeUsdc] = useState('5.00');
+  const [videoLink, setVideoLink] = useState('');
+  const [caretakerAddress, setCaretakerAddress] = useState('');
   const now = useNow();
 
   const open = current && ['requested', 'rescheduled', 'approved'].includes(current.status);
-  type Screen = 'chat' | 'book' | 'waiting' | 'suggested' | 'upcoming' | 'outcome' | 'pay' | 'paid';
+  type Screen = 'chat' | 'book' | 'waiting' | 'suggested' | 'upcoming' | 'outcome' | 'pay' | 'paid'
+    | 'remote_set_video' | 'remote_upcoming' | 'remote_outcome';
+  const isRemote = current?.inspectionMode === 'remote';
   const screen: Screen = paid ? 'paid'
     : current?.canPay ? 'pay'
     : rebooking ? 'book'
     : current?.status === 'requested' ? 'waiting'
     : current?.status === 'rescheduled' ? 'suggested'
+    : current?.status === 'approved' && isRemote
+      ? (current.videoLink ? (now >= current.slotAt - OUTCOME_OPENS_MS ? 'remote_outcome' : 'remote_upcoming') : 'remote_set_video')
     : current?.status === 'approved' ? (now >= current.slotAt - OUTCOME_OPENS_MS ? 'outcome' : 'upcoming')
     : !chatted && !current ? 'chat'
     : 'book';
-  const stepIdx = { chat: 0, book: 1, waiting: 1, suggested: 1, upcoming: 2, outcome: 2, pay: 3, paid: 4 }[screen];
+  const stepIdx = {
+    chat: 0, book: 1, waiting: 1, suggested: 1,
+    upcoming: 2, outcome: 2, remote_set_video: 2, remote_upcoming: 2, remote_outcome: 2,
+    pay: 3, paid: 4,
+  }[screen] ?? 1;
 
   async function run(key: string, fn: () => Promise<Inspection | void>, ok?: (i: Inspection) => string) {
     setBusy(key);
@@ -165,7 +177,7 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
     const reschedule = rebooking && open;
     await run('book', () => reschedule
       ? ins.act(current.id, 'reschedule', { slotAt: slot, note })
-      : ins.book({ listingId: String(listing.id), slotAt: slot, name: contact.name, phone: contact.phone, note }),
+      : ins.book({ listingId: String(listing.id), slotAt: slot, name: contact.name, phone: contact.phone, note, inspectionMode, remoteFeeUsdc: inspectionMode === 'remote' ? remoteFeeUsdc : undefined }),
     i => i.notified ? 'Request sent. The landlord got a WhatsApp message and a notification in Handova.' : 'Request sent. The landlord will see it in Handova.');
     setRebooking(false);
   }
@@ -258,8 +270,47 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                   {!rebooking && current?.status === 'cancelled' && <Banner tone="warn" icon={AlertTriangle} title="You cancelled your last visit"><p>Book again whenever you're ready.</p></Banner>}
                   <div>
                     <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>{rebooking ? 'Pick a new time' : 'When can you visit?'}</h3>
-                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>The landlord will approve it or suggest another time. Inspections are free.</p>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>The landlord will approve it or suggest another time.</p>
                   </div>
+
+                  {/* Inspection mode picker */}
+                  {!rebooking && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['in_person', 'remote'] as const).map(mode => (
+                        <button key={mode} onClick={() => setInspectionMode(mode)}
+                          className="flex flex-col items-center gap-2 p-3 rounded-2xl text-sm font-semibold transition-all"
+                          style={{ background: inspectionMode === mode ? 'var(--accent-soft)' : 'var(--surface-muted)', border: `1.5px solid ${inspectionMode === mode ? 'var(--accent)' : 'var(--border)'}`, color: inspectionMode === mode ? 'var(--accent)' : 'var(--ink)' }}>
+                          {mode === 'in_person' ? <User className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                          {mode === 'in_person' ? 'In-Person Visit' : 'Remote Video'}
+                          <span className="text-[11px] font-normal text-center leading-tight" style={{ color: 'var(--muted)' }}>
+                            {mode === 'in_person' ? 'Come to the property yourself' : 'Video call with on-site caretaker'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Remote fee input */}
+                  {!rebooking && inspectionMode === 'remote' && (
+                    <div className="rounded-2xl p-4 space-y-3" style={{ background: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
+                      <div className="flex items-start gap-2">
+                        <Video className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
+                        <p className="text-xs" style={{ color: 'var(--ink-2)' }}>A small fee goes to the on-site caretaker for their time. <span style={{ color: 'var(--accent)' }}>Handova takes nothing.</span></p>
+                      </div>
+                      <label className="text-xs block" style={{ color: 'var(--muted)' }}>
+                        Caretaker fee (USDC)
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>$</span>
+                          <input type="number" min="1" max="50" step="0.5" value={remoteFeeUsdc}
+                            onChange={e => setRemoteFeeUsdc(e.target.value)}
+                            className="w-24 h-10 px-3 rounded-xl text-sm outline-none tabular-nums"
+                            style={{ background: 'var(--popover)', border: '1px solid var(--border)', color: 'var(--ink)' }} />
+                          <span className="text-xs" style={{ color: 'var(--muted)' }}>≈ {formatNaira(parseFloat(remoteFeeUsdc) || 0)}</span>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
                   <SlotPicker value={slot} onChange={setSlot} />
                   {!rebooking && (
                     <div className="grid grid-cols-2 gap-2">
@@ -348,6 +399,76 @@ export default function InspectionFlow({ listing, account, onClose }: Props) {
                     <Spin on={busy === 'missed'} /> No, it didn't happen
                   </button>
                   <p className="text-xs text-center" style={{ color: 'var(--subtle)' }}>Didn't like the place? Just close this — you don't have to rent it.</p>
+                </>))}
+
+                {/* 3 — Remote: landlord sets video link */}
+                {screen === 'remote_set_video' && current && current.role === 'landlord' && (<>
+                  <Banner tone="warn" icon={Video} title="Set up the video call">
+                    <p>This tenant requested a remote inspection. Add a video call link so they can join at {formatSlot(current.slotAt)}.</p>
+                  </Banner>
+                  <div className="space-y-3">
+                    <label className="text-xs block" style={{ color: 'var(--muted)' }}>Video call link
+                      <input value={videoLink} onChange={e => setVideoLink(e.target.value)} placeholder="https://meet.google.com/abc-defg-hij"
+                        className="mt-1 w-full h-11 px-3 rounded-xl text-sm outline-none" style={{ ...card, color: 'var(--ink)' }} />
+                    </label>
+                    <label className="text-xs block" style={{ color: 'var(--muted)' }}>Caretaker name (optional)
+                      <input value={caretakerAddress} onChange={e => setCaretakerAddress(e.target.value)} placeholder="e.g. Chidi Obi"
+                        className="mt-1 w-full h-11 px-3 rounded-xl text-sm outline-none" style={{ ...card, color: 'var(--ink)' }} />
+                    </label>
+                  </div>
+                  <button onClick={() => { void run('set_video', () => ins.act(current.id, 'set_video', { videoLink, caretakerAddress }), () => 'Video link sent to tenant.'); }} disabled={!videoLink.startsWith('http') || busy === 'set_video'} className={btn} style={primary}>
+                    <Spin on={busy === 'set_video'} /><Video className="w-4 h-4" /> Send video link to tenant
+                  </button>
+                </>)}
+
+                {screen === 'remote_set_video' && current && current.role === 'tenant' && (
+                  <Banner tone="warn" icon={Video} title="Waiting for the landlord to set the video link">
+                    <p>Your remote inspection is approved for {formatSlot(current.slotAt)}. The landlord will send a video call link before then.</p>
+                    <p className="mt-1">Remote fee held in escrow: {formatNaira(parseFloat(current.remoteFeeUsdc || '0'))} — paid to the caretaker after the call.</p>
+                  </Banner>
+                )}
+
+                {/* 3 — Remote: call is ready to join */}
+                {screen === 'remote_upcoming' && current && (<>
+                  <Banner tone="good" icon={Video} title="Your remote inspection is ready">
+                    <p>Scheduled for {formatSlot(current.slotAt)}.</p>
+                    {current.caretakerAddress && <p>Caretaker: <strong>{current.caretakerAddress}</strong></p>}
+                    <p className="mt-1">Fee (held in escrow): {formatNaira(parseFloat(current.remoteFeeUsdc || '0'))} — released after both sides confirm the call happened.</p>
+                  </Banner>
+                  {current.videoLink && (
+                    <a href={current.videoLink} target="_blank" rel="noreferrer" className={btn} style={primary}>
+                      <Video className="w-4 h-4" /> Join Video Call <ExternalLink className="w-3 h-3 ml-auto" />
+                    </a>
+                  )}
+                  <div className="rounded-2xl p-4" style={card}>
+                    <p className="text-xs font-semibold mb-2" style={{ color: 'var(--ink)' }}>What to ask the caretaker to show you</p>
+                    <ul className="text-xs space-y-1" style={{ color: 'var(--ink-2)' }}>
+                      {['Water running in kitchen and bathroom', 'Power and sockets', 'Every room, ceiling and walls (cracks/damp)', 'Doors, windows, burglary proofs', 'Road outside and drainage', 'The compound and neighbours'].map(t => <li key={t}>• {t}</li>)}
+                    </ul>
+                  </div>
+                </>)}
+
+                {/* 3 — Remote: confirm the call happened */}
+                {screen === 'remote_outcome' && current && (current.tenantCallConfirmedAt && current.role === 'tenant' ? (
+                  <Banner tone="good" icon={Clock} title="Thanks — waiting for the landlord to confirm the call too">
+                    <p>Once they confirm, you can pay into escrow. The caretaker fee is released at that point.</p>
+                  </Banner>
+                ) : (<>
+                  <div>
+                    <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Did the video call happen?</h3>
+                    <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>{formatSlot(current.slotAt)} · Remote inspection</p>
+                  </div>
+                  {current.videoLink && (
+                    <a href={current.videoLink} target="_blank" rel="noreferrer" className={btn} style={secondary}>
+                      <Video className="w-4 h-4" /> Join call again if needed <ExternalLink className="w-3 h-3 ml-auto" />
+                    </a>
+                  )}
+                  <button onClick={() => { void run('call_confirmed', () => ins.act(current.id, 'call_confirmed'), i => i.canPay ? 'Both sides confirmed. You can now pay into escrow.' : 'Thanks! Waiting for the other side to confirm.'); }} disabled={!!busy} className={btn} style={primary}>
+                    <Spin on={busy === 'call_confirmed'} /><CheckCircle2 className="w-4 h-4" /> Yes, the call happened
+                  </button>
+                  <button onClick={() => { void run('missed', () => ins.act(current.id, 'missed'), () => 'Noted. You can book a new time.'); }} disabled={!!busy} className={btn} style={secondary}>
+                    <Spin on={busy === 'missed'} /> No, it didn't happen
+                  </button>
                 </>))}
 
                 {/* 4 — Pay in cash (the landlord chose cash for this tenant) */}
