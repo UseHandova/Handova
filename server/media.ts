@@ -12,7 +12,7 @@ import express, { type Express, type Request, type Response } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'node:crypto';
 import { S3Client } from 'bun';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const TYPES: Record<string, { ext: string; kind: 'image' | 'video'; maxBytes: number }> = {
@@ -78,9 +78,26 @@ export async function saveRemoteMedia(url: string, auth?: { user: string; pass: 
   }
 }
 
+/**
+ * Restore media carried over from another server: files in MEDIA_SEED_DIR (default server/seed-media) are copied
+ * into the media store if they aren't there yet. Only names we generate (24 hex chars + known extension) are copied.
+ */
+function seedMedia(root: string) {
+  const seed = resolve(process.env.MEDIA_SEED_DIR || 'server/seed-media');
+  if (!existsSync(seed)) return;
+  let copied = 0;
+  for (const name of readdirSync(seed)) {
+    if (!/^[a-f0-9]{24}\.(jpg|png|webp|mp4|mov|webm)$/.test(name) || existsSync(`${root}/${name}`)) continue;
+    copyFileSync(`${seed}/${name}`, `${root}/${name}`);
+    copied++;
+  }
+  if (copied) console.log(`[Media] Restored ${copied} file(s) from ${seed}`);
+}
+
 export function mountMedia(app: Express, dir?: string) {
   const root = dir ? resolve(dir) : mediaRoot();
   mkdirSync(root, { recursive: true });
+  if (!dir) seedMedia(root);
   const perIp = new Map<string, { count: number; resetAt: number }>();
 
   const upload = multer({

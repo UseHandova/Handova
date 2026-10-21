@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import type { SmartAccount } from 'viem/account-abstraction';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Home, Shield, Fingerprint, Loader2, AlertCircle, ArrowLeft, CheckCircle2, Phone } from 'lucide-react';
@@ -22,6 +23,19 @@ const springs = {
 };
 
 type AuthError = { msg: string; action?: 'login' | 'register' };
+
+/** The app whose built-in browser this is (passkeys don't work in those), or null in a normal browser. */
+function detectInAppBrowser(): string | null {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  if (/LinkedInApp/i.test(ua)) return 'LinkedIn';
+  if (/Instagram/i.test(ua)) return 'Instagram';
+  if (/FBAN|FBAV|FB_IAB/i.test(ua)) return 'Facebook';
+  if (/Twitter|TwitterAndroid/i.test(ua)) return 'X';
+  if (/TikTok|musical_ly|BytedanceWebview/i.test(ua)) return 'TikTok';
+  if (/Snapchat/i.test(ua)) return 'Snapchat';
+  if (/Telegram/i.test(ua)) return 'Telegram';
+  return null;
+}
 
 /** Name, message and the underlying cause (viem wraps Circle's RPC errors, e.g. "Unknown RPC error" → the real reason). */
 const errText = (e: unknown) => {
@@ -138,6 +152,8 @@ export default function AuthGate({ onAuth }: Props) {
     { icon: CheckCircle2, label: t('no_agent'),    sub: t('zero_fees') },
   ];
 
+  const inAppBrowser = detectInAppBrowser();
+
   return (
     <div className="relative min-h-dvh overflow-hidden" style={{ background: 'var(--bg-gradient)' }}>
       {/* Background orbs */}
@@ -180,6 +196,24 @@ export default function AuthGate({ onAuth }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* In-app browsers (LinkedIn, X, Instagram, Facebook…) can't use passkeys: send people to a real browser. */}
+      {inAppBrowser && (
+        <div className="relative z-10 mx-4 mt-16 rounded-2xl p-4 text-sm" style={{ background: 'rgba(242,180,90,0.12)', border: '1px solid rgba(242,180,90,0.45)', color: 'var(--ink)' }}>
+          <p className="font-semibold mb-1">Open Handova in {/android/i.test(navigator.userAgent) ? 'Chrome' : 'Safari'} to sign up</p>
+          <p className="text-xs mb-3" style={{ color: 'var(--ink-2)' }}>
+            You're in {inAppBrowser}'s built-in browser, where Face ID / fingerprint sign-in doesn't work. Tap the ⋯ menu and choose "Open in browser", or use a button below.
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            {/android/i.test(navigator.userAgent) && (
+              <a href={`intent://${window.location.host}${window.location.pathname}#Intent;scheme=https;package=com.android.chrome;end`}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: 'var(--accent)' }}>Open in Chrome</a>
+            )}
+            <button onClick={() => { void navigator.clipboard?.writeText(window.location.href).then(() => toast.success('Link copied. Paste it into your browser.'), () => toast.error('Couldn’t copy. Long-press the address to copy it.')); }}
+              className="px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--ink)' }}>Copy link</button>
+          </div>
+        </div>
+      )}
 
       {/* Main content */}
       <div className="relative z-10 flex flex-col items-center justify-center min-h-dvh px-5 py-16">

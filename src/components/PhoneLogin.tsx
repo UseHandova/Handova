@@ -190,8 +190,16 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
           <p className="text-xs" style={{ color: 'var(--muted)' }}>Send this from <strong>{pretty(start.phone)}</strong> to {start.botNumber}</p>
           <p className="mono text-lg font-bold mt-1" style={{ color: 'var(--ink)' }}>{start.text}</p>
         </div>
+        {/* Twilio's WhatsApp sandbox only delivers to numbers that joined it, so first-timers must send the join
+            message once. Make it step 1 instead of small print, or new users never get their code. */}
+        {start.sandboxJoin && (
+          <a href={`https://wa.me/${start.botNumber.replace(/\D/g, '')}?text=${encodeURIComponent(start.sandboxJoin)}`} target="_blank" rel="noreferrer"
+            className={`${primary} mb-2`} style={{ background: 'var(--surface-muted)', color: 'var(--ink)', border: '1px solid var(--border)' }}>
+            <MessageCircle className="w-5 h-5" style={{ color: '#1fa855' }} /> Step 1: Activate WhatsApp (first time only)
+          </a>
+        )}
         <a href={start.waLink} target="_blank" rel="noreferrer" className={primary} style={{ background: '#1fa855' }}>
-          <MessageCircle className="w-5 h-5" /> Open WhatsApp
+          <MessageCircle className="w-5 h-5" /> {start.sandboxJoin ? 'Step 2: Send your code' : 'Open WhatsApp'}
         </a>
         {status === 'pending' && (
           <p className="text-sm text-center mt-4 flex items-center justify-center gap-2" style={{ color: 'var(--muted)' }}>
@@ -207,7 +215,7 @@ export default function PhoneLogin({ onAuth, onBack }: Props) {
         )}
         {start.sandboxJoin && (
           <p className="text-xs mt-4 leading-relaxed" style={{ color: 'var(--subtle)' }}>
-            First time? WhatsApp needs you to send <span className="mono">{start.sandboxJoin}</span> to {start.botNumber} once before the code works (test mode).
+            First time on Handova? Do step 1 once (it sends <span className="mono">{start.sandboxJoin}</span> to {start.botNumber}), wait for WhatsApp's reply, then do step 2.
           </p>
         )}
         {smsMode && <button onClick={() => { void begin('sms'); }} disabled={busy} className="w-full mt-3 text-sm underline underline-offset-2" style={{ color: 'var(--muted)' }}>
